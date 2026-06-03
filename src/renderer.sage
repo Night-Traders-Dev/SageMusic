@@ -257,11 +257,9 @@ class MusicRenderer:
     proc draw_score(self, frame_info, score):
         self.cf = frame_info["current_frame"]
         let cmd = frame_info["cmd"]
-        let rp = self.base["render_pass"]
-        let fb = self.base["framebuffers"][frame_info["image_index"]]
         
-        # Clear color: Paper White
-        gpu.cmd_begin_render_pass(cmd, rp, fb, [[0.98, 0.98, 0.96, 1.0], [1.0, 0]])
+        # Draw Paper White background covering the screen (to the right of sidebar)
+        self.draw_rect(cmd, 250.0, 0.0, self.base["width"] - 250.0, self.base["height"], [0.98, 0.98, 0.96, 1.0])
         
         # Iterate through parts, systems, and measures
         let cur_y = 100.0

@@ -396,7 +396,7 @@ proc main():
                 editor_ctx["selected_element"] = nil
         
         # Layout Pass (only if dirty, but every frame for now)
-        layout_score(score, 1280.0 - 250.0) # score width minus sidebar
+        layout_score(score, renderer.base["width"] - 250.0) # score width minus sidebar
         
         # Rendering Pass
         renderer.draw_score(frame_info, score)
