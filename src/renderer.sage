@@ -295,38 +295,48 @@ class MusicRenderer:
         # 2. Draw Barline (end of measure)
         self.draw_line(cmd, x + measure.width, y, x + measure.width, y + 32.0, [0.0, 0.0, 0.0, 1.0])
 
-        # 2.1 Draw Clef
-        let clef_glyph = "gClef"
-        let clef_y = y + 24.0 # Treble G4 line
-        if measure.clef == "bass":
-            clef_glyph = "fClef"
-            clef_y = y + 8.0 # Bass F3 line
-        elif measure.clef == "alto":
-            clef_glyph = "cClef"
-            clef_y = y + 16.0 # Alto C4 line
-        elif measure.clef == "tenor":
-            clef_glyph = "cClef"
-            clef_y = y + 8.0 # Tenor C4 line (fourth line from bottom)
-            
-        self.draw_glyph(cmd, clef_glyph, x + 15.0, clef_y, [0.0, 0.0, 0.0, 1.0])
+        # Determine if we should draw the clef (only on the first measure of the staff)
+        let draw_clef = true
+        if measure.parent != nil:
+            if len(measure.parent.measures) > 0:
+                if measure.parent.measures[0] != measure:
+                    draw_clef = false
+
+        if draw_clef:
+            # 2.1 Draw Clef
+            let clef_glyph = "gClef"
+            let clef_y = y + 24.0 # Treble G4 line
+            if measure.clef == "bass":
+                clef_glyph = "fClef"
+                clef_y = y + 8.0 # Bass F3 line
+            elif measure.clef == "alto":
+                clef_glyph = "cClef"
+                clef_y = y + 16.0 # Alto C4 line
+            elif measure.clef == "tenor":
+                clef_glyph = "cClef"
+                clef_y = y + 8.0 # Tenor C4 line (fourth line from bottom)
+                
+            self.draw_glyph(cmd, clef_glyph, x + 15.0, clef_y, [0.0, 0.0, 0.0, 1.0])
 
         # 3. Draw Elements in voices
         let v_idx = 0
         while v_idx < len(measure.voices):
             let voice = measure.voices[v_idx]
-            self.draw_voice(cmd, voice, x, y, measure.clef)
+            self.draw_voice(cmd, voice, x, y, measure.clef, draw_clef)
             v_idx = v_idx + 1
 
-    proc draw_voice(self, cmd, voice, x, y, clef):
-        let cur_x = x + 65.0 # Padding for clef
+    proc draw_voice(self, cmd, voice, x, y, clef, draw_clef):
+        let cur_x = x + 20.0
+        if draw_clef:
+            cur_x = x + 65.0 # Padding for clef
         let e_idx = 0
         while e_idx < len(voice.elements):
             let element = voice.elements[e_idx]
             # Simple layout: linear placement
-            if type(element) == "Note":
+            if element.type == "Note":
                 self.draw_note(cmd, element, cur_x, y, clef)
                 cur_x = cur_x + 50.0
-            elif type(element) == "Rest":
+            elif element.type == "Rest":
                 self.draw_rest(cmd, element, cur_x, y)
                 cur_x = cur_x + 50.0
             e_idx = e_idx + 1

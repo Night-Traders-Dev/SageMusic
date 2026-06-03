@@ -13,6 +13,7 @@ class MusicElement:
 class Note(MusicElement):
     proc init(self, pitch, duration):
         super.init()
+        self.type = "Note"
         self.pitch = pitch       # e.g., "C4", "G#3"
         self.duration = duration # e.g., 0.25 (quarter), 0.5 (half)
         self.accidental = nil    # "sharp", "flat", "natural"
@@ -27,6 +28,7 @@ class Note(MusicElement):
 class Rest(MusicElement):
     proc init(self, duration):
         super.init()
+        self.type = "Rest"
         self.duration = duration
 
     proc __str__(self):

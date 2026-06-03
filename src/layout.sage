@@ -37,12 +37,21 @@ proc calculate_measure_content_width(measure):
     let v_idx = 0
     while v_idx < len(measure.voices):
         let voice = measure.voices[v_idx]
-        let voice_w = len(voice.elements) * 40.0 # 40 units per element
+        let voice_w = len(voice.elements) * 50.0 # 50 units per element
         if voice_w > max_voice_w:
             max_voice_w = voice_w
         v_idx = v_idx + 1
     
-    return max_voice_w + 60.0 # +60 for clef and margins
+    let draw_clef = true
+    if measure.parent != nil:
+        if len(measure.parent.measures) > 0:
+            if measure.parent.measures[0] != measure:
+                draw_clef = false
+
+    let extra_w = 35.0
+    if draw_clef:
+        extra_w = 80.0
+    return max_voice_w + extra_w
 
 # Pitch to Y-coordinate mapping
 # clef: "treble", "bass", etc.

@@ -100,11 +100,19 @@ proc find_hovered_note(score, mx, my):
             let v_idx = 0
             while v_idx < len(measure.voices):
                 let voice = measure.voices[v_idx]
-                let elem_x = cur_x + 65.0
+                let draw_clef = true
+                if measure.parent != nil:
+                    if len(measure.parent.measures) > 0:
+                        if measure.parent.measures[0] != measure:
+                            draw_clef = false
+                
+                let elem_x = cur_x + 20.0
+                if draw_clef:
+                    elem_x = cur_x + 65.0
                 let e_idx = 0
                 while e_idx < len(voice.elements):
                     let elem = voice.elements[e_idx]
-                    if type(elem) == "Note":
+                    if elem.type == "Note":
                         let step_offset = pitch_to_y(measure.clef, elem.pitch)
                         let elem_y = cur_y + 32.0 - step_offset
                         let dx = mx - elem_x
@@ -116,7 +124,7 @@ proc find_hovered_note(score, mx, my):
                             res["voice_idx"] = v_idx
                             res["element_idx"] = e_idx
                             return res
-                    elif type(elem) == "Rest":
+                    elif elem.type == "Rest":
                         let elem_y = cur_y + 16.0
                         let dx = mx - elem_x
                         let dy = my - elem_y
