@@ -16,10 +16,10 @@ The immediate focus is getting basic visual output on screen and enabling core r
 - [x] Render bar lines at measure boundaries.
 
 ### 1.2 SMuFL Font Integration
-- [ ] Load the **Bravura** (or equivalent) SMuFL font metadata and texture atlas.
-- [ ] Implement the glyph rendering pipeline (`create_glyph_pipeline()`).
-- [ ] Map SMuFL codepoints (e.g., treble clef `0xE050`, quarter notehead `0xE0A4`) to texture coordinates (UVs).
-- [ ] Render actual music glyphs instead of rectangle stubs.
+- [x] Load the **Bravura** (or equivalent) SMuFL font metadata and texture atlas.
+- [x] Implement the glyph rendering pipeline (`create_glyph_pipeline()`).
+- [x] Map SMuFL codepoints (e.g., treble clef `0xE050`, quarter notehead `0xE0A4`) to texture coordinates (UVs).
+- [x] Render actual music glyphs instead of rectangle stubs.
 
 ### 1.3 Pitch-to-Y Layout Logic
 - [x] Implement the `pitch_to_y()` mapping function in `layout.sage`.
@@ -45,8 +45,8 @@ Transforming SageMusic from a static renderer into an interactive editor.
 - [x] Implement pitch preview on hover when the Note Entry tool is active.
 
 ### 2.3 Document History (Undo/Redo)
-- [ ] Implement a Command Pattern for editing actions (AddNote, DeleteNote, ChangePitch).
-- [ ] Support undo/redo stack.
+- [x] Implement a Command Pattern for editing actions (AddNote, DeleteNote, ChangePitch).
+- [x] Support undo/redo stack.
 
 ---
 

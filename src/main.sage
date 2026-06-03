@@ -11,6 +11,7 @@ import graphics.renderer as base_renderer
 from model import create_empty_score, Note, Rest, Measure
 from renderer import MusicRenderer
 from layout import layout_score, y_to_pitch, pitch_to_y
+from command import CommandHistory, AddElementCommand, DeleteElementCommand
 
 # Helper to remove element at index
 proc remove_at(lst, idx):
@@ -146,6 +147,9 @@ proc main():
     # 2. Create UI Context
     let ui_ctx = ui.ui_create()
     
+    # Initialize Undo/Redo history
+    let history = CommandHistory()
+    
     # 3. Initialize Data Model
     let score = create_empty_score("Untitled Symphony")
     
@@ -200,7 +204,16 @@ proc main():
         ui.ui_begin_frame(ui_ctx)
         
         # Handle hotkeys
-        if gpu.key_just_pressed(gpu.KEY_S):
+        if gpu.key_pressed(gpu.KEY_CTRL):
+            if gpu.key_just_pressed(gpu.KEY_Z):
+                history.undo()
+                clear_selection(score)
+                editor_ctx["selected_element"] = nil
+            elif gpu.key_just_pressed(gpu.KEY_Y):
+                history.redo()
+                clear_selection(score)
+                editor_ctx["selected_element"] = nil
+        elif gpu.key_just_pressed(gpu.KEY_S):
             editor_ctx["current_tool"] = "select"
             clear_selection(score)
             editor_ctx["selected_element"] = nil
@@ -256,9 +269,19 @@ proc main():
             clear_selection(score)
             editor_ctx["selected_element"] = nil
             
+        # Undo/Redo buttons
+        if ui.ui_button(ui_ctx, 20, tool_y + 120, 100, 30, "Undo"):
+            history.undo()
+            clear_selection(score)
+            editor_ctx["selected_element"] = nil
+        if ui.ui_button(ui_ctx, 130, tool_y + 120, 100, 30, "Redo"):
+            history.redo()
+            clear_selection(score)
+            editor_ctx["selected_element"] = nil
+            
         # Duration selection panel
-        ui.ui_label(ui_ctx, 20, 220, "Duration Palette")
-        let dur_y = 240
+        ui.ui_label(ui_ctx, 20, 250, "Duration Palette")
+        let dur_y = 270
         
         let d_1_0_label = "Whole (1.0)"
         if editor_ctx["selected_duration"] == 1.0:
@@ -290,12 +313,13 @@ proc main():
         if ui.ui_button(ui_ctx, 20, dur_y + 160, 210, 30, d_0_0625_label):
             editor_ctx["selected_duration"] = 0.0625
 
-        ui.ui_label(ui_ctx, 20, 470, "Shortcuts:")
-        ui.ui_label(ui_ctx, 20, 490, "S: Select Tool")
-        ui.ui_label(ui_ctx, 20, 510, "N: Note Entry")
-        ui.ui_label(ui_ctx, 20, 530, "E: Eraser Tool")
-        ui.ui_label(ui_ctx, 20, 550, "1-5: Select Durations")
-        ui.ui_label(ui_ctx, 20, 570, "Del/Bksp: Delete Note")
+        ui.ui_label(ui_ctx, 20, 490, "Shortcuts:")
+        ui.ui_label(ui_ctx, 20, 510, "S: Select Tool")
+        ui.ui_label(ui_ctx, 20, 530, "N: Note Entry")
+        ui.ui_label(ui_ctx, 20, 550, "E: Eraser Tool")
+        ui.ui_label(ui_ctx, 20, 570, "1-5: Select Durations")
+        ui.ui_label(ui_ctx, 20, 590, "Del/Bksp: Delete Note")
+        ui.ui_label(ui_ctx, 20, 610, "Ctrl+Z/Y: Undo/Redo")
         
         # UI Pass - End
         ui.ui_end_frame(ui_ctx)
@@ -326,7 +350,7 @@ proc main():
                 renderer.preview_info = preview
                 
                 if ui_ctx["mouse_clicked"]:
-                    voice.add_element(Note(pitch, editor_ctx["selected_duration"]))
+                    history.execute(AddElementCommand(voice, Note(pitch, editor_ctx["selected_duration"])))
             else:
                 renderer.preview_info = nil
                 
@@ -340,7 +364,7 @@ proc main():
                     target_elem.hovered_delete = true
                     
                     if ui_ctx["mouse_clicked"]:
-                        target_voice.elements = remove_at(target_voice.elements, note_hover["element_idx"])
+                        history.execute(DeleteElementCommand(target_voice, target_elem))
                         
             # Select
             if editor_ctx["current_tool"] == "select":
@@ -364,7 +388,8 @@ proc main():
                 let info = editor_ctx["selected_element_info"]
                 let target_measure = score.parts[info["part_idx"]].measures[info["measure_idx"]]
                 let target_voice = target_measure.voices[info["voice_idx"]]
-                target_voice.elements = remove_at(target_voice.elements, info["element_idx"])
+                let target_elem = editor_ctx["selected_element"]
+                history.execute(DeleteElementCommand(target_voice, target_elem))
                 editor_ctx["selected_element"] = nil
         
         # Layout Pass (only if dirty, but every frame for now)
