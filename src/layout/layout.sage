@@ -3,6 +3,11 @@
 # Handles spacing, rhythmic alignment, and bounds calculation
 # -----------------------------------------
 
+# Staff metrics constants
+let STAFF_LINE_GAP = 8.0
+let STAFF_HEIGHT = 32.0
+let STAFF_STEP = 4.0
+
 proc layout_score(score, view_width, view_mode):
     # Iterate through all parts and calculate measure sizes
     let p_idx = 0
@@ -142,7 +147,7 @@ proc pitch_to_y(clef, pitch):
         ref_val = 22
 
     let pos = diatonic_val - ref_val
-    return pos * 4.0 # 4 pixels per staff step
+    return pos * STAFF_STEP # 4 pixels per staff step
 
 # Maps staff position step back to a pitch name
 proc y_to_pitch(clef, pos):

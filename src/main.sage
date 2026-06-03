@@ -11,7 +11,7 @@ import graphics.renderer as base_renderer
 # Local imports
 from model.model import create_empty_score, Note, Rest, Measure, Score, Part
 from renderer.renderer import MusicRenderer
-from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width
+from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP
 from command.command import CommandHistory, AddElementCommand, DeleteElementCommand
 
 # Helper to remove element at index
@@ -100,7 +100,7 @@ proc find_hovered_measure(score, mx, my, view_mode):
                 break
 
             if mx >= cur_x and mx <= cur_x + measure.width:
-                if my >= cur_y - 40.0 and my <= cur_y + 32.0 + 40.0:
+                if my >= cur_y - 40.0 and my <= cur_y + STAFF_HEIGHT + 40.0:
                     let res = {}
                     res["part_idx"] = part_idx
                     res["measure_idx"] = m_idx
@@ -151,7 +151,7 @@ proc find_hovered_note(score, mx, my, view_mode):
                     
                     if elem.type == "Note":
                         let step_offset = pitch_to_y(measure.clef, elem.pitch)
-                        let elem_y = cur_y + 32.0 - step_offset
+                        let elem_y = cur_y + STAFF_HEIGHT - step_offset
                         let dx = mx - elem_x
                         let dy = my - elem_y
                         if dx * dx + dy * dy < 225.0: # 15px radius
@@ -162,7 +162,7 @@ proc find_hovered_note(score, mx, my, view_mode):
                             res["element_idx"] = e_idx
                             return res
                     elif elem.type == "Rest":
-                        let elem_y = cur_y + 16.0
+                        let elem_y = cur_y + STAFF_HEIGHT / 2.0
                         let dx = mx - elem_x
                         let dy = my - elem_y
                         if dx * dx + dy * dy < 225.0: # 15px radius

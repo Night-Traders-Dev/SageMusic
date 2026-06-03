@@ -9,7 +9,7 @@ import json
 import graphics.math3d as math3d
 import graphics.renderer as base_renderer
 from graphics.mesh import mesh_vertex_binding, mesh_vertex_attribs
-from layout.layout import pitch_to_y, get_measure_layout_pos
+from layout.layout import pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP
 
 # ============================================================================
 # Glyph Mapping (SMuFL snippets)
@@ -406,15 +406,15 @@ class MusicRenderer:
             m_idx = m_idx + 1
 
     proc draw_measure(self, cmd, measure, x, y):
-        # 1. Draw Staff Lines (5 lines, 8px apart)
+        # 1. Draw Staff Lines (5 lines, STAFF_LINE_GAP apart)
         let i = 0
         while i < 5:
-            let ly = y + i * 8.0
+            let ly = y + i * STAFF_LINE_GAP
             self.draw_line(cmd, x, ly, x + measure.width, ly, [0.2, 0.2, 0.2, 1.0])
             i = i + 1
         
         # 2. Draw Barline (end of measure)
-        self.draw_line(cmd, x + measure.width, y, x + measure.width, y + 32.0, [0.0, 0.0, 0.0, 1.0])
+        self.draw_line(cmd, x + measure.width, y, x + measure.width, y + STAFF_HEIGHT, [0.0, 0.0, 0.0, 1.0])
 
         # Determine if we should draw the clef (only on the first measure of the staff)
         let draw_clef = true
@@ -491,7 +491,7 @@ class MusicRenderer:
     proc draw_note(self, cmd, note, x, y, clef):
         # Calculate pitch Y offset using layout.pitch_to_y
         let step_offset = pitch_to_y(clef, note.pitch)
-        let pitch_y = y + 32.0 - step_offset
+        let pitch_y = y + STAFF_HEIGHT - step_offset
         
         let color = [0.0, 0.0, 0.0, 1.0]
         if note.selected:
@@ -512,16 +512,16 @@ class MusicRenderer:
             self.draw_line(cmd, x + 4, pitch_y, x + 4, pitch_y - 28, color)
 
         # Draw Ledger Lines if out of staff bounds
-        let pos = int(step_offset / 4.0)
+        let pos = int(step_offset / STAFF_STEP)
         if pos <= -2:
             let lp = -2
             while lp >= pos:
-                self.draw_line(cmd, x - 8, y + 32.0 - lp * 4.0, x + 8, y + 32.0 - lp * 4.0, color)
+                self.draw_line(cmd, x - 8, y + STAFF_HEIGHT - lp * STAFF_STEP, x + 8, y + STAFF_HEIGHT - lp * STAFF_STEP, color)
                 lp = lp - 2
         elif pos >= 10:
             let lp = 10
             while lp <= pos:
-                self.draw_line(cmd, x - 8, y + 32.0 - lp * 4.0, x + 8, y + 32.0 - lp * 4.0, color)
+                self.draw_line(cmd, x - 8, y + STAFF_HEIGHT - lp * STAFF_STEP, x + 8, y + STAFF_HEIGHT - lp * STAFF_STEP, color)
                 lp = lp + 2
 
         # Draw Accidental if present in pitch or note properties
@@ -578,11 +578,11 @@ class MusicRenderer:
         elif rest.duration >= 0.0625:
             rest_glyph = "restSixteenth"
             
-        let ref_y = y + 16.0
+        let ref_y = y + STAFF_HEIGHT / 2.0
         if rest_glyph == "restWhole":
-            ref_y = y + 8.0 # Sits on 4th line (line index 1 from top)
+            ref_y = y + STAFF_LINE_GAP # Sits on 4th line (line index 1 from top)
         elif rest_glyph == "restHalf":
-            ref_y = y + 16.0 # Sits on 3rd line
+            ref_y = y + STAFF_HEIGHT / 2.0 # Sits on 3rd line
             
         self.draw_glyph(cmd, rest_glyph, x, ref_y, color)
 
