@@ -149,6 +149,8 @@ class MusicRenderer:
         self.rect_vertices = []
         self.glyph_vertices = []
         self.font_vertices = []
+        
+        self.glyph_cache = {} # PERF-RG-14: Cache for glyph metadata
 
     proc create_glyph_pipeline(self):
         # 1. Create Descriptor Set Layout
@@ -390,6 +392,16 @@ class MusicRenderer:
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
             let pos = get_measure_layout_pos(part_idx, m_idx, score, view_mode)
+            
+            # PERF-RG-10: Frustum culling (basic screen-space check)
+            if pos["x"] + measure.width < 0.0 or pos["x"] > self.base["width"]:
+                m_idx = m_idx + 1
+                continue
+                
+            if pos["y"] + 100.0 < 0.0 or pos["y"] > self.base["height"]:
+                m_idx = m_idx + 1
+                continue
+
             self.draw_measure(cmd, measure, pos["x"], pos["y"])
             m_idx = m_idx + 1
 
@@ -579,14 +591,16 @@ class MusicRenderer:
         if self.atlas_data == nil:
             return
         
-        # SEC-EH-16: JSON schema validation
-        let glyphs = self.atlas_data["glyphs"]
-        if glyphs == nil:
-            return
-            
-        let g = glyphs[name]
+        # PERF-RG-14: Using cache to avoid dictionary lookup every glyph
+        let g = self.glyph_cache[name]
         if g == nil:
-            return
+            let glyphs = self.atlas_data["glyphs"]
+            if glyphs == nil:
+                return
+            g = glyphs[name]
+            if g == nil:
+                return
+            self.glyph_cache[name] = g
             
         # 2. Determine texture coords (UVs)
         let tw = self.atlas_data["texture_width"]

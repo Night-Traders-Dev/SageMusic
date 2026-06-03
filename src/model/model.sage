@@ -9,8 +9,10 @@ class MusicElement:
         self.parent = nil
         self.selected = false
         self.hovered_delete = false
+        self.dirty = true
 
     proc mark_dirty(self):
+        self.dirty = true
         if self.parent != nil:
             self.parent.mark_dirty()
 

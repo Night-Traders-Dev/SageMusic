@@ -21,14 +21,8 @@ class AddElementCommand(Command):
         self.voice.mark_dirty()
 
     proc undo(self):
-        # Remove element from voice
-        let new_list = []
-        let i = 0
-        while i < len(self.voice.elements):
-            if self.voice.elements[i] != self.element:
-                push(new_list, self.voice.elements[i])
-            i = i + 1
-        self.voice.elements = new_list
+        # PERF-AC-1: Optimized removal since it's always the last element
+        pop(self.voice.elements)
         self.voice.mark_dirty()
 
 class DeleteElementCommand(Command):
@@ -87,13 +81,8 @@ class CommandHistory:
         let last_idx = len(self.undo_stack) - 1
         let cmd = self.undo_stack[last_idx]
         
-        # Pop from undo_stack
-        let new_undo = []
-        let i = 0
-        while i < last_idx:
-            push(new_undo, self.undo_stack[i])
-            i = i + 1
-        self.undo_stack = new_undo
+        # PERF-AC-2: Using pop() instead of manual stack rebuild
+        pop(self.undo_stack)
         
         cmd.undo()
         push(self.redo_stack, cmd)
@@ -105,13 +94,8 @@ class CommandHistory:
         let last_idx = len(self.redo_stack) - 1
         let cmd = self.redo_stack[last_idx]
         
-        # Pop from redo_stack
-        let new_redo = []
-        let i = 0
-        while i < last_idx:
-            push(new_redo, self.redo_stack[i])
-            i = i + 1
-        self.redo_stack = new_redo
+        # PERF-AC-2: Using pop() instead of manual stack rebuild
+        pop(self.redo_stack)
         
         cmd.execute()
         push(self.undo_stack, cmd)

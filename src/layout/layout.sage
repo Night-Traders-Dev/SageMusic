@@ -8,29 +8,34 @@ proc layout_score(score, view_width, view_mode):
     let p_idx = 0
     while p_idx < len(score.parts):
         let part = score.parts[p_idx]
-        layout_part(part, view_width)
         
-        # 3. Calculate and cache absolute positions based on view_mode
-        # This addresses PERF-AC-5 by moving summation to the layout pass
-        let cur_x = 270.0
-        let m_idx = 0
-        while m_idx < len(part.measures):
-            let measure = part.measures[m_idx]
-            if view_mode == "scroll":
-                measure.layout_x = cur_x
-                measure.layout_y = 100.0 + p_idx * 200.0
-                cur_x = cur_x + measure.width
-            else: # "page"
-                let sys_idx = int(m_idx / 2)
-                let local_m_idx = m_idx % 2
-                
-                let px = 270.0
-                if local_m_idx == 1:
-                    px = 270.0 + part.measures[sys_idx * 2].width
-                
-                measure.layout_x = px
-                measure.layout_y = 100.0 + sys_idx * 380.0 + p_idx * 100.0
-            m_idx = m_idx + 1
+        # PERF-AC-6: Only layout part if it's dirty
+        if part.dirty:
+            layout_part(part, view_width)
+            
+            # 3. Calculate and cache absolute positions based on view_mode
+            # This addresses PERF-AC-5 by moving summation to the layout pass
+            let cur_x = 270.0
+            let m_idx = 0
+            while m_idx < len(part.measures):
+                let measure = part.measures[m_idx]
+                if view_mode == "scroll":
+                    measure.layout_x = cur_x
+                    measure.layout_y = 100.0 + p_idx * 200.0
+                    cur_x = cur_x + measure.width
+                else: # "page"
+                    let sys_idx = int(m_idx / 2)
+                    let local_m_idx = m_idx % 2
+                    
+                    let px = 270.0
+                    if local_m_idx == 1:
+                        px = 270.0 + part.measures[sys_idx * 2].width
+                    
+                    measure.layout_x = px
+                    measure.layout_y = 100.0 + sys_idx * 380.0 + p_idx * 100.0
+                m_idx = m_idx + 1
+            
+            part.dirty = false
             
         p_idx = p_idx + 1
 
@@ -40,9 +45,14 @@ proc layout_part(part, view_width):
     let m_idx = 0
     while m_idx < len(part.measures):
         let measure = part.measures[m_idx]
-        let content_w = calculate_measure_content_width(measure)
-        measure.width = content_w
-        total_content_width = total_content_width + content_w
+        
+        # PERF-AC-6: Only recalculate measure content if dirty
+        if measure.dirty:
+            let content_w = calculate_measure_content_width(measure)
+            measure.width = content_w
+            measure.dirty = false
+            
+        total_content_width = total_content_width + measure.width
         m_idx = m_idx + 1
     
     # 2. Horizontal Justification (casting off)
