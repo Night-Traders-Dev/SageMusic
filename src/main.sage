@@ -9,137 +9,13 @@ import graphics.ui as ui
 import graphics.renderer as base_renderer
 
 # Local imports
-from model.model import create_empty_score, Note, Rest, Measure, Score, Part, get_safe_part, get_safe_measure, get_safe_voice, get_safe_element
+from model.model import create_empty_score, Note, Rest, Measure, Score, Part
 from renderer.renderer import MusicRenderer
 from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP
 from command.command import CommandHistory, AddElementCommand, DeleteElementCommand
 from ui.editor_ui import process_editor_ui
+from utils.helpers import get_safe_part, get_safe_measure, get_safe_voice, get_safe_element, find_hovered_measure, find_hovered_note
 
-# Helper to remove element at index
-proc remove_at(lst, idx):
-    let new_list = []
-    let i = 0
-    while i < len(lst):
-        if i != idx:
-            push(new_list, lst[i])
-        i = i + 1
-    return new_list
-
-# Safe access helpers
-proc get_safe_part(score, p_idx):
-    if p_idx >= 0 and p_idx < len(score.parts):
-        return score.parts[p_idx]
-    return nil
-
-proc get_safe_measure(part, m_idx):
-    if part != nil and m_idx >= 0 and m_idx < len(part.measures):
-        return part.measures[m_idx]
-    return nil
-
-proc get_safe_voice(measure, v_idx):
-    if measure != nil and v_idx >= 0 and v_idx < len(measure.voices):
-        return measure.voices[v_idx]
-    return nil
-
-proc get_safe_element(voice, e_idx):
-    if voice != nil and e_idx >= 0 and e_idx < len(voice.elements):
-        return voice.elements[e_idx]
-    return nil
-
-# Helper to find which measure boundaries enclose the mouse coordinate
-proc find_hovered_measure(score, mx, my, view_mode):
-    let part_idx = 0
-    while part_idx < len(score.parts):
-        let part = score.parts[part_idx]
-        let m_idx = 0
-        while m_idx < len(part.measures):
-            let measure = part.measures[m_idx]
-            let cur_x = measure.layout_x
-            let cur_y = measure.layout_y
-            
-            # Spatial pruning: if mx is before this measure, it can't be in any subsequent measure in this part (scroll mode)
-            if view_mode == "scroll" and mx < cur_x:
-                break
-
-            if mx >= cur_x and mx <= cur_x + measure.width:
-                if my >= cur_y - 40.0 and my <= cur_y + STAFF_HEIGHT + 40.0:
-                    let res = {}
-                    res["part_idx"] = part_idx
-                    res["measure_idx"] = m_idx
-                    res["measure_x"] = cur_x
-                    res["measure_y"] = cur_y
-                    return res
-            m_idx = m_idx + 1
-        part_idx = part_idx + 1
-    return nil
-
-# Helper to find which note/rest the mouse coordinates lie within a small radius of
-proc find_hovered_note(score, mx, my, view_mode):
-    let part_idx = 0
-    while part_idx < len(score.parts):
-        let part = score.parts[part_idx]
-        let m_idx = 0
-        while m_idx < len(part.measures):
-            let measure = part.measures[m_idx]
-            let cur_x = measure.layout_x
-            let cur_y = measure.layout_y
-            
-            # Early exit if mouse is not even near this measure
-            if mx < cur_x - 50.0 or mx > cur_x + measure.width + 50.0:
-                m_idx = m_idx + 1
-                continue
-                
-            let v_idx = 0
-            while v_idx < len(measure.voices):
-                let voice = measure.voices[v_idx]
-                let draw_clef = true
-                if measure.parent != nil:
-                    if len(measure.parent.measures) > 0:
-                        if measure.parent.measures[0] != measure:
-                            draw_clef = false
-                
-                let elem_x = cur_x + 20.0
-                if draw_clef:
-                    elem_x = cur_x + 65.0
-                let e_idx = 0
-                while e_idx < len(voice.elements):
-                    let elem = voice.elements[e_idx]
-                    
-                    let elem_w = get_element_width(elem)
-                    
-                    # Early exit for elements if mx is past them
-                    if mx < elem_x - 30.0:
-                        break
-                    
-                    if elem.type == "Note":
-                        let step_offset = pitch_to_y(measure.clef, elem.pitch)
-                        let elem_y = cur_y + STAFF_HEIGHT - step_offset
-                        let dx = mx - elem_x
-                        let dy = my - elem_y
-                        if dx * dx + dy * dy < 225.0: # 15px radius
-                            let res = {}
-                            res["part_idx"] = part_idx
-                            res["measure_idx"] = m_idx
-                            res["voice_idx"] = v_idx
-                            res["element_idx"] = e_idx
-                            return res
-                    elif elem.type == "Rest":
-                        let elem_y = cur_y + STAFF_HEIGHT / 2.0
-                        let dx = mx - elem_x
-                        let dy = my - elem_y
-                        if dx * dx + dy * dy < 225.0: # 15px radius
-                            let res = {}
-                            res["part_idx"] = part_idx
-                            res["measure_idx"] = m_idx
-                            res["voice_idx"] = v_idx
-                            res["element_idx"] = e_idx
-                            return res
-                    elem_x = elem_x + elem_w
-                    e_idx = e_idx + 1
-                v_idx = v_idx + 1
-            m_idx = m_idx + 1
-        part_idx = part_idx + 1
-    return nil
 
 proc main():
     print "Starting SageMusic..."
@@ -156,76 +32,23 @@ proc main():
     # Initialize Undo/Redo history
     let history = CommandHistory()
     
-    # 3. Initialize Data Model with 3 separate parts (staffs)
+    # 3. Initialize Data Model with a single empty treble staff
     let score = Score("Untitled Symphony")
     
     let treble_part = Part("Treble Staff")
-    let alto_part = Part("Alto Staff")
-    let bass_part = Part("Bass Staff")
     
     let i = 0
     while i < 4:
         let m_treble = Measure()
         m_treble.clef = "treble"
+        
+        # Add default rest for empty measure
+        m_treble.get_voice(0).add_element(Rest(1.0))
+        
         treble_part.add_measure(m_treble)
-        
-        let m_alto = Measure()
-        m_alto.clef = "alto"
-        alto_part.add_measure(m_alto)
-        
-        let m_bass = Measure()
-        m_bass.clef = "bass"
-        bass_part.add_measure(m_bass)
-        
         i = i + 1
         
     score.add_part(treble_part)
-    score.add_part(alto_part)
-    score.add_part(bass_part)
-    
-    # Add some demo notes to Treble Staff, Measure 1
-    let v1 = score.parts[0].measures[0].get_voice(0)
-    v1.add_element(Note("C4", 0.25))
-    v1.add_element(Note("E4", 0.25))
-    v1.add_element(Note("G4", 0.25))
-    v1.add_element(Rest(0.25))
-
-    # Treble Staff, Measure 2 (Ledger lines & Flats)
-    let v4 = score.parts[0].measures[1].get_voice(0)
-    v4.add_element(Note("A3", 0.25)) # Ledger line below
-    v4.add_element(Note("C4", 0.25)) # Ledger line below
-    v4.add_element(Note("Bb4", 0.25)) # Flat accidental
-    v4.add_element(Note("A5", 0.25)) # Ledger line above
-
-    # Alto Staff, Measure 1
-    let v3 = score.parts[1].measures[0].get_voice(0)
-    v3.add_element(Note("F3", 0.25))
-    v3.add_element(Note("C4", 0.25))
-    v3.add_element(Note("E4", 0.25))
-    v3.add_element(Note("G4", 0.25))
-
-    # Alto Staff, Measure 2 (Whole rest)
-    let v3_2 = score.parts[1].measures[1].get_voice(0)
-    v3_2.add_element(Rest(1.0))
-
-    # Bass Staff, Measure 1
-    let v2 = score.parts[2].measures[0].get_voice(0)
-    v2.add_element(Note("G2", 0.25))
-    v2.add_element(Note("B2", 0.25))
-    v2.add_element(Note("D3", 0.25))
-    v2.add_element(Note("F#3", 0.25))
-
-    # Bass Staff, Measure 2 (Whole rest)
-    let v2_2 = score.parts[2].measures[1].get_voice(0)
-    v2_2.add_element(Rest(1.0))
-
-    # Default rests for Measure 3 and 4
-    score.parts[0].measures[2].get_voice(0).add_element(Rest(1.0))
-    score.parts[0].measures[3].get_voice(0).add_element(Rest(1.0))
-    score.parts[1].measures[2].get_voice(0).add_element(Rest(1.0))
-    score.parts[1].measures[3].get_voice(0).add_element(Rest(1.0))
-    score.parts[2].measures[2].get_voice(0).add_element(Rest(1.0))
-    score.parts[2].measures[3].get_voice(0).add_element(Rest(1.0))
 
     # Editor State Context
     let editor_ctx = {}

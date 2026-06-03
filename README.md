@@ -12,10 +12,13 @@ A professional-grade music notation software clone of Finale, built natively in 
 
 ## Project Structure
 
-- src/model.sage: Core Object-Oriented music data structures.
-- src/renderer.sage: GPU rendering engine and glyph management.
-- src/layout.sage: Spacing and justification logic.
-- src/main.sage: Application entry point and UI orchestration.
+- `src/model/`: Core Object-Oriented music data structures.
+- `src/renderer/`: GPU rendering engine, batching system, and glyph management.
+- `src/layout/`: Spatial hit-testing, spacing, and justification logic.
+- `src/ui/`: Interactive editor interfaces, tool palettes, and modals.
+- `src/utils/`: Helper functions for safe model access and hit detection.
+- `src/command/`: Command history system for undo/redo capabilities.
+- `src/main.sage`: Application entry point and main loop orchestration.
 
 ## How to Run
 

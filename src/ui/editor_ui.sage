@@ -1,6 +1,6 @@
 import gpu
 import graphics.ui as ui
-from model.model import get_safe_part, get_safe_measure
+from utils.helpers import get_safe_part, get_safe_measure, get_safe_voice, get_safe_element, find_hovered_measure, find_hovered_note
 
 proc process_editor_ui(ui_ctx, editor_ctx, score, history, renderer):
     let should_exit = false

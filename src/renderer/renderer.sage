@@ -179,7 +179,7 @@ class MusicRenderer:
         base_renderer.end_frame(self.base, frame_info)
 
     proc recreate_swapchain(self):
-        base_renderer.recreate_swapchain(self.base)
+        gpu.recreate_swapchain()
         self.frame_resources = []
         let i = 0
         while i < len(self.base["framebuffers"]):

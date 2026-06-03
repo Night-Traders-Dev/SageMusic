@@ -173,24 +173,3 @@ proc create_empty_score(title):
         
     score.add_part(piano)
     return score
-
-# Safe access helpers
-proc get_safe_part(score, p_idx):
-    if p_idx >= 0 and p_idx < len(score.parts):
-        return score.parts[p_idx]
-    return nil
-
-proc get_safe_measure(part, m_idx):
-    if part != nil and m_idx >= 0 and m_idx < len(part.measures):
-        return part.measures[m_idx]
-    return nil
-
-proc get_safe_voice(measure, v_idx):
-    if measure != nil and v_idx >= 0 and v_idx < len(measure.voices):
-        return measure.voices[v_idx]
-    return nil
-
-proc get_safe_element(voice, e_idx):
-    if voice != nil and e_idx >= 0 and e_idx < len(voice.elements):
-        return voice.elements[e_idx]
-    return nil
