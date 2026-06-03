@@ -8,6 +8,7 @@ class MusicElement:
         self.id = "" # Unique identifier
         self.parent = nil
         self.selected = false
+        self.hovered_delete = false
 
 class Note(MusicElement):
     proc init(self, pitch, duration):

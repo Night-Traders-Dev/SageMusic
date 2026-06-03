@@ -33,16 +33,16 @@ The immediate focus is getting basic visual output on screen and enabling core r
 Transforming SageMusic from a static renderer into an interactive editor.
 
 ### 2.1 Tool State Machine
-- [ ] Implement an input handling system for mouse and keyboard events.
-- [ ] Create a tool selection state:
+- [x] Implement an input handling system for mouse and keyboard events.
+- [x] Create a tool selection state:
   - **Selection Tool**: Select, drag, and delete existing notes/rests/measures.
   - **Note Entry Tool**: Click on the staff to insert notes/rests of the selected duration.
   - **Eraser Tool**: Remove specific notation elements.
 
 ### 2.2 Duration Palette & Input
-- [ ] Make the immediate-mode UI duration palette interactive (selecting Whole, Half, Quarter, Eighth, etc.).
-- [ ] Bind keyboard shortcuts for durations (e.g., `5` for quarter note, `6` for half note, similar to industry standards).
-- [ ] Implement pitch preview on hover when the Note Entry tool is active.
+- [x] Make the immediate-mode UI duration palette interactive (selecting Whole, Half, Quarter, Eighth, etc.).
+- [x] Bind keyboard shortcuts for durations (e.g., keys `1` to `5` for durations).
+- [x] Implement pitch preview on hover when the Note Entry tool is active.
 
 ### 2.3 Document History (Undo/Redo)
 - [ ] Implement a Command Pattern for editing actions (AddNote, DeleteNote, ChangePitch).

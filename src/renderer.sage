@@ -42,6 +42,7 @@ class MusicRenderer:
         self.zoom = 1.0
         self.offset_x = 0.0
         self.offset_y = 0.0
+        self.preview_info = nil
         
         # Shader constants (Projection Matrix)
         self.proj = math3d.mat4_ortho(0, width, height, 0, -1, 1)
@@ -140,6 +141,10 @@ class MusicRenderer:
             cur_y = cur_y + 200.0 # Vertical system spacing
             part_idx = part_idx + 1
 
+        if self.preview_info != nil:
+            let pr = self.preview_info
+            self.draw_note_preview(cmd, pr["x"], pr["y"], pr["duration"])
+
     proc draw_part(self, cmd, part, y):
         let cur_x = 50.0
         let m_idx = 0
@@ -186,24 +191,30 @@ class MusicRenderer:
         let step_offset = pitch_to_y(clef, note.pitch)
         let pitch_y = y + 32.0 - step_offset
         
+        let color = [0.0, 0.0, 0.0, 1.0]
+        if note.selected:
+            color = [0.18, 0.45, 0.90, 1.0]
+        elif note.hovered_delete:
+            color = [0.85, 0.25, 0.25, 1.0]
+
         # Draw Notehead (as a small rect for now, will be glyph)
-        self.draw_rect(cmd, x - 4, pitch_y - 3, 8, 6, [0, 0, 0, 1.0])
+        self.draw_rect(cmd, x - 4, pitch_y - 3, 8, 6, color)
         
         # Draw Stem (if not a whole note)
         if note.duration < 1.0:
-            self.draw_line(cmd, x + 4, pitch_y, x + 4, pitch_y - 28, [0, 0, 0, 1.0])
+            self.draw_line(cmd, x + 4, pitch_y, x + 4, pitch_y - 28, color)
 
         # Draw Ledger Lines if out of staff bounds
         let pos = int(step_offset / 4.0)
         if pos <= -2:
             let lp = -2
             while lp >= pos:
-                self.draw_line(cmd, x - 8, y + 32.0 - lp * 4.0, x + 8, y + 32.0 - lp * 4.0, [0.0, 0.0, 0.0, 1.0])
+                self.draw_line(cmd, x - 8, y + 32.0 - lp * 4.0, x + 8, y + 32.0 - lp * 4.0, color)
                 lp = lp - 2
         elif pos >= 10:
             let lp = 10
             while lp <= pos:
-                self.draw_line(cmd, x - 8, y + 32.0 - lp * 4.0, x + 8, y + 32.0 - lp * 4.0, [0.0, 0.0, 0.0, 1.0])
+                self.draw_line(cmd, x - 8, y + 32.0 - lp * 4.0, x + 8, y + 32.0 - lp * 4.0, color)
                 lp = lp + 2
 
         # Draw Accidental if present in pitch or note properties
@@ -214,33 +225,55 @@ class MusicRenderer:
             acc = note.accidental
 
         if acc != "":
-            self.draw_accidental(cmd, acc, x, pitch_y)
+            self.draw_accidental(cmd, acc, x, pitch_y, color)
 
-    proc draw_accidental(self, cmd, acc_type, x, y):
+    proc draw_note_preview(self, cmd, x, y, duration):
+        let color = [0.6, 0.6, 0.6, 0.5] # Semi-transparent light gray
+        # Draw Notehead
+        self.draw_rect(cmd, x - 4, y - 3, 8, 6, color)
+        # Draw Stem
+        if duration < 1.0:
+            self.draw_line(cmd, x + 4, y, x + 4, y - 28, color)
+
+    proc draw_accidental(self, cmd, acc_type, x, y, color):
         if acc_type == "#" or acc_type == "sharp":
             # Two vertical lines
-            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 8, [0, 0, 0, 1])
-            self.draw_line(cmd, x - 10, y - 8, x - 10, y + 8, [0, 0, 0, 1])
+            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 8, color)
+            self.draw_line(cmd, x - 10, y - 8, x - 10, y + 8, color)
             # Two horizontal lines
-            self.draw_line(cmd, x - 17, y - 3, x - 7, y - 3, [0, 0, 0, 1])
-            self.draw_line(cmd, x - 17, y + 3, x - 7, y + 3, [0, 0, 0, 1])
+            self.draw_line(cmd, x - 17, y - 3, x - 7, y - 3, color)
+            self.draw_line(cmd, x - 17, y + 3, x - 7, y + 3, color)
         elif acc_type == "b" or acc_type == "flat":
             # Vertical stem
-            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 4, [0, 0, 0, 1])
+            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 4, color)
             # Small loop box
-            self.draw_rect(cmd, x - 14, y - 1, 5, 5, [0, 0, 0, 1])
+            self.draw_rect(cmd, x - 14, y - 1, 5, 5, color)
         elif acc_type == "n" or acc_type == "natural":
             # Left stem
-            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 4, [0, 0, 0, 1])
+            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 4, color)
             # Right stem
-            self.draw_line(cmd, x - 10, y - 4, x - 10, y + 8, [0, 0, 0, 1])
+            self.draw_line(cmd, x - 10, y - 4, x - 10, y + 8, color)
             # Cross bars
-            self.draw_line(cmd, x - 14, y - 4, x - 10, y - 4, [0, 0, 0, 1])
-            self.draw_line(cmd, x - 14, y + 4, x - 10, y + 4, [0, 0, 0, 1])
+            self.draw_line(cmd, x - 14, y - 4, x - 10, y - 4, color)
+            self.draw_line(cmd, x - 14, y + 4, x - 10, y + 4, color)
 
     proc draw_rest(self, cmd, rest, x, y):
         # Draw Rest (as a small box)
-        self.draw_rect(cmd, x - 3, y + 12, 6, 8, [0.4, 0.4, 0.4, 1.0])
+        let color = [0.4, 0.4, 0.4, 1.0]
+        if rest.selected:
+            color = [0.18, 0.45, 0.90, 1.0]
+        elif rest.hovered_delete:
+            color = [0.85, 0.25, 0.25, 1.0]
+        self.draw_rect(cmd, x - 3, y + 12, 6, 8, color)
+
+    proc draw_ui(self, cmd, ui_ctx):
+        let dl = ui_ctx["draw_list"]
+        let i = 0
+        while i < len(dl):
+            let c = dl[i]
+            if c["type"] == "rect":
+                self.draw_rect(cmd, c["x"], c["y"], c["w"], c["h"], c["color"])
+            i = i + 1
 
     proc draw_line(self, cmd, x1, y1, x2, y2, color):
         let vertices = [

@@ -85,3 +85,42 @@ proc pitch_to_y(clef, pitch):
 
     let pos = diatonic_val - ref_val
     return pos * 4.0 # 4 pixels per staff step
+
+# Maps staff position step back to a pitch name
+proc y_to_pitch(clef, pos):
+    let ref_val = 30
+    if clef == "treble":
+        ref_val = 30
+    elif clef == "bass":
+        ref_val = 18
+    elif clef == "alto":
+        ref_val = 24
+    elif clef == "tenor":
+        ref_val = 22
+        
+    let diatonic_val = pos + ref_val
+    let octave = int(diatonic_val / 7)
+    let step_idx = diatonic_val - octave * 7
+    
+    # Handle octave offset for negative step index
+    if step_idx < 0:
+        octave = octave - 1
+        step_idx = step_idx + 7
+
+    let letter = "C"
+    if step_idx == 0:
+        letter = "C"
+    elif step_idx == 1:
+        letter = "D"
+    elif step_idx == 2:
+        letter = "E"
+    elif step_idx == 3:
+        letter = "F"
+    elif step_idx == 4:
+        letter = "G"
+    elif step_idx == 5:
+        letter = "A"
+    elif step_idx == 6:
+        letter = "B"
+        
+    return letter + str(octave)
