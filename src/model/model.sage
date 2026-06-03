@@ -117,6 +117,43 @@ class Score(MusicElement):
     proc mark_dirty(self):
         self.dirty = true
 
+    proc clear_selection(self):
+        let p_idx = 0
+        while p_idx < len(self.parts):
+            let part = self.parts[p_idx]
+            let m_idx = 0
+            while m_idx < len(part.measures):
+                let measure = part.measures[m_idx]
+                let v_idx = 0
+                while v_idx < len(measure.voices):
+                    let voice = measure.voices[v_idx]
+                    let e_idx = 0
+                    while e_idx < len(voice.elements):
+                        voice.elements[e_idx].selected = false
+                        voice.elements[e_idx].hovered_delete = false
+                        e_idx = e_idx + 1
+                    v_idx = v_idx + 1
+                m_idx = m_idx + 1
+            p_idx = p_idx + 1
+
+    proc clear_hovered_delete(self):
+        let p_idx = 0
+        while p_idx < len(self.parts):
+            let part = self.parts[p_idx]
+            let m_idx = 0
+            while m_idx < len(part.measures):
+                let measure = part.measures[m_idx]
+                let v_idx = 0
+                while v_idx < len(measure.voices):
+                    let voice = measure.voices[v_idx]
+                    let e_idx = 0
+                    while e_idx < len(voice.elements):
+                        voice.elements[e_idx].hovered_delete = false
+                        e_idx = e_idx + 1
+                    v_idx = v_idx + 1
+                m_idx = m_idx + 1
+            p_idx = p_idx + 1
+
     proc add_part(self, part):
         part.parent = self
         push(self.parts, part)
@@ -136,3 +173,24 @@ proc create_empty_score(title):
         
     score.add_part(piano)
     return score
+
+# Safe access helpers
+proc get_safe_part(score, p_idx):
+    if p_idx >= 0 and p_idx < len(score.parts):
+        return score.parts[p_idx]
+    return nil
+
+proc get_safe_measure(part, m_idx):
+    if part != nil and m_idx >= 0 and m_idx < len(part.measures):
+        return part.measures[m_idx]
+    return nil
+
+proc get_safe_voice(measure, v_idx):
+    if measure != nil and v_idx >= 0 and v_idx < len(measure.voices):
+        return measure.voices[v_idx]
+    return nil
+
+proc get_safe_element(voice, e_idx):
+    if voice != nil and e_idx >= 0 and e_idx < len(voice.elements):
+        return voice.elements[e_idx]
+    return nil
