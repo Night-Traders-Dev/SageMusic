@@ -4,6 +4,8 @@
 # -----------------------------------------
 
 import gpu
+import io
+import json
 import graphics.math3d as math3d
 import graphics.renderer as base_renderer
 from graphics.mesh import mesh_vertex_binding, mesh_vertex_attribs
@@ -43,6 +45,15 @@ class MusicRenderer:
         self.offset_x = 0.0
         self.offset_y = 0.0
         self.preview_info = nil
+
+        # Load Atlas Metadata JSON
+        if io.exists("assets/bravura_atlas.json"):
+            let meta_str = io.readfile("assets/bravura_atlas.json")
+            let root = json.cJSON_Parse(meta_str)
+            self.atlas_data = json.cJSON_ToSage(root)
+            json.cJSON_Delete(root)
+        else:
+            self.atlas_data = nil
         
         # Shader constants (Projection Matrix)
         self.proj = math3d.mat4_ortho(0, width, height, 0, -1, 1)
@@ -102,8 +113,77 @@ class MusicRenderer:
         self.cf = 0
 
     proc create_glyph_pipeline(self):
-        # Placeholder for textured quad pipeline
-        return nil
+        # 1. Create Descriptor Set Layout
+        let b0 = {}
+        b0["binding"] = 0
+        b0["type"] = gpu.DESC_COMBINED_SAMPLER
+        b0["stage"] = gpu.STAGE_FRAGMENT
+        b0["count"] = 1
+        self.sprite_desc_layout = gpu.create_descriptor_layout([b0])
+        
+        # 2. Create Descriptor Pool
+        let ps = {}
+        ps["type"] = gpu.DESC_COMBINED_SAMPLER
+        ps["count"] = 1
+        self.sprite_desc_pool = gpu.create_descriptor_pool(1, [ps])
+        self.sprite_desc_set = gpu.allocate_descriptor_set(self.sprite_desc_pool, self.sprite_desc_layout)
+        
+        # 3. Load Sprite Texture & Sampler
+        self.sprite_texture = gpu.load_texture("assets/bravura_atlas.png")
+        self.sprite_sampler = gpu.create_sampler(gpu.FILTER_LINEAR, gpu.FILTER_LINEAR, gpu.ADDRESS_CLAMP_EDGE)
+        gpu.update_descriptor_image(self.sprite_desc_set, 0, self.sprite_texture, self.sprite_sampler)
+        
+        # 4. Pipeline Layout (64-byte projection matrix + 1 descriptor set)
+        self.sprite_pipe_layout = gpu.create_pipeline_layout([self.sprite_desc_layout], 64, gpu.STAGE_VERTEX)
+        
+        # 5. Load Compiled Shaders
+        let vert_shader = gpu.load_shader("src/sprite.vert.spv", gpu.STAGE_VERTEX)
+        let frag_shader = gpu.load_shader("src/sprite.frag.spv", gpu.STAGE_FRAGMENT)
+        if vert_shader < 0 or frag_shader < 0:
+            raise "Failed to load sprite shaders"
+        
+        # 6. Graphics Pipeline Setup
+        let s_vb = {}
+        s_vb["binding"] = 0
+        s_vb["stride"] = 32
+        s_vb["rate"] = gpu.INPUT_RATE_VERTEX
+        
+        let s_va0 = {}
+        s_va0["location"] = 0
+        s_va0["binding"] = 0
+        s_va0["format"] = gpu.ATTR_VEC2
+        s_va0["offset"] = 0
+        
+        let s_va1 = {}
+        s_va1["location"] = 1
+        s_va1["binding"] = 0
+        s_va1["format"] = gpu.ATTR_VEC2
+        s_va1["offset"] = 8
+        
+        let s_va2 = {}
+        s_va2["location"] = 2
+        s_va2["binding"] = 0
+        s_va2["format"] = gpu.ATTR_VEC4
+        s_va2["offset"] = 16
+        
+        let s_cfg = {}
+        s_cfg["layout"] = self.sprite_pipe_layout
+        s_cfg["render_pass"] = self.base["render_pass"]
+        s_cfg["vertex_shader"] = vert_shader
+        s_cfg["fragment_shader"] = frag_shader
+        s_cfg["topology"] = gpu.TOPO_TRIANGLE_LIST
+        s_cfg["cull_mode"] = gpu.CULL_NONE
+        s_cfg["front_face"] = gpu.FRONT_CCW
+        s_cfg["depth_test"] = false
+        s_cfg["depth_write"] = false
+        s_cfg["blend"] = true
+        s_cfg["vertex_bindings"] = [s_vb]
+        s_cfg["vertex_attribs"] = [s_va0, s_va1, s_va2]
+        
+        let pipeline = gpu.create_graphics_pipeline(s_cfg)
+        if pipeline < 0:
+            raise "Failed to create glyph pipeline"
+        return pipeline
 
     proc begin_frame(self):
         let frame_info = base_renderer.begin_frame(self.base)
@@ -165,6 +245,21 @@ class MusicRenderer:
         # 2. Draw Barline (end of measure)
         self.draw_line(cmd, x + measure.width, y, x + measure.width, y + 32.0, [0.0, 0.0, 0.0, 1.0])
 
+        # 2.1 Draw Clef
+        let clef_glyph = "gClef"
+        let clef_y = y + 24.0 # Treble G4 line
+        if measure.clef == "bass":
+            clef_glyph = "fClef"
+            clef_y = y + 8.0 # Bass F3 line
+        elif measure.clef == "alto":
+            clef_glyph = "cClef"
+            clef_y = y + 16.0 # Alto C4 line
+        elif measure.clef == "tenor":
+            clef_glyph = "cClef"
+            clef_y = y + 8.0 # Tenor C4 line (fourth line from bottom)
+            
+        self.draw_glyph(cmd, clef_glyph, x + 15.0, clef_y, [0.0, 0.0, 0.0, 1.0])
+
         # 3. Draw Elements in voices
         let v_idx = 0
         while v_idx < len(measure.voices):
@@ -173,7 +268,7 @@ class MusicRenderer:
             v_idx = v_idx + 1
 
     proc draw_voice(self, cmd, voice, x, y, clef):
-        let cur_x = x + 20.0 # Initial padding for clef/key
+        let cur_x = x + 65.0 # Padding for clef
         let e_idx = 0
         while e_idx < len(voice.elements):
             let element = voice.elements[e_idx]
@@ -197,8 +292,13 @@ class MusicRenderer:
         elif note.hovered_delete:
             color = [0.85, 0.25, 0.25, 1.0]
 
-        # Draw Notehead (as a small rect for now, will be glyph)
-        self.draw_rect(cmd, x - 4, pitch_y - 3, 8, 6, color)
+        # Draw Notehead
+        let nh_glyph = "noteheadBlack"
+        if note.duration >= 1.0:
+            nh_glyph = "noteheadWhole"
+        elif note.duration >= 0.5:
+            nh_glyph = "noteheadHalf"
+        self.draw_glyph(cmd, nh_glyph, x, pitch_y, color)
         
         # Draw Stem (if not a whole note)
         if note.duration < 1.0:
@@ -229,42 +329,143 @@ class MusicRenderer:
 
     proc draw_note_preview(self, cmd, x, y, duration):
         let color = [0.6, 0.6, 0.6, 0.5] # Semi-transparent light gray
-        # Draw Notehead
-        self.draw_rect(cmd, x - 4, y - 3, 8, 6, color)
+        let nh_glyph = "noteheadBlack"
+        if duration >= 1.0:
+            nh_glyph = "noteheadWhole"
+        elif duration >= 0.5:
+            nh_glyph = "noteheadHalf"
+        self.draw_glyph(cmd, nh_glyph, x, y, color)
+        
         # Draw Stem
         if duration < 1.0:
             self.draw_line(cmd, x + 4, y, x + 4, y - 28, color)
 
     proc draw_accidental(self, cmd, acc_type, x, y, color):
+        let glyph_name = ""
         if acc_type == "#" or acc_type == "sharp":
-            # Two vertical lines
-            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 8, color)
-            self.draw_line(cmd, x - 10, y - 8, x - 10, y + 8, color)
-            # Two horizontal lines
-            self.draw_line(cmd, x - 17, y - 3, x - 7, y - 3, color)
-            self.draw_line(cmd, x - 17, y + 3, x - 7, y + 3, color)
+            glyph_name = "accidentalSharp"
         elif acc_type == "b" or acc_type == "flat":
-            # Vertical stem
-            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 4, color)
-            # Small loop box
-            self.draw_rect(cmd, x - 14, y - 1, 5, 5, color)
+            glyph_name = "accidentalFlat"
         elif acc_type == "n" or acc_type == "natural":
-            # Left stem
-            self.draw_line(cmd, x - 14, y - 8, x - 14, y + 4, color)
-            # Right stem
-            self.draw_line(cmd, x - 10, y - 4, x - 10, y + 8, color)
-            # Cross bars
-            self.draw_line(cmd, x - 14, y - 4, x - 10, y - 4, color)
-            self.draw_line(cmd, x - 14, y + 4, x - 10, y + 4, color)
+            glyph_name = "accidentalNatural"
+            
+        if glyph_name != "":
+            self.draw_glyph(cmd, glyph_name, x, y, color)
 
     proc draw_rest(self, cmd, rest, x, y):
-        # Draw Rest (as a small box)
-        let color = [0.4, 0.4, 0.4, 1.0]
+        let color = [0.0, 0.0, 0.0, 1.0]
         if rest.selected:
             color = [0.18, 0.45, 0.90, 1.0]
         elif rest.hovered_delete:
             color = [0.85, 0.25, 0.25, 1.0]
-        self.draw_rect(cmd, x - 3, y + 12, 6, 8, color)
+            
+        let rest_glyph = "restQuarter"
+        if rest.duration >= 1.0:
+            rest_glyph = "restWhole"
+        elif rest.duration >= 0.5:
+            rest_glyph = "restHalf"
+        elif rest.duration >= 0.25:
+            rest_glyph = "restQuarter"
+        elif rest.duration >= 0.125:
+            rest_glyph = "restEighth"
+        elif rest.duration >= 0.0625:
+            rest_glyph = "restSixteenth"
+            
+        let ref_y = y + 16.0
+        if rest_glyph == "restWhole":
+            ref_y = y + 8.0 # Sits on 4th line (line index 1 from top)
+        elif rest_glyph == "restHalf":
+            ref_y = y + 16.0 # Sits on 3rd line
+            
+        self.draw_glyph(cmd, rest_glyph, x, ref_y, color)
+
+    proc draw_glyph(self, cmd, name, x, y, color):
+        # 1. Look up glyph metadata
+        if self.atlas_data == nil:
+            return
+        
+        let glyphs = self.atlas_data["glyphs"]
+        let g = glyphs[name]
+        if g == nil:
+            return
+            
+        # 2. Determine texture coords (UVs)
+        let tw = self.atlas_data["texture_width"]
+        let th = self.atlas_data["texture_height"]
+        
+        let u0 = g["x"] / tw
+        let v0 = g["y"] / th
+        let u1 = (g["x"] + g["w"]) / tw
+        let v1 = (g["y"] + g["h"]) / th
+        
+        # 3. Calculate position bounds based on offsets
+        let px = x
+        let py = y
+        let pw = g["w"]
+        let ph = g["h"]
+        
+        if name == "noteheadWhole" or name == "noteheadHalf" or name == "noteheadBlack":
+            px = x - pw / 2.0
+            py = y - ph / 2.0
+        elif name == "gClef":
+            px = x
+            py = y - 76.0
+        elif name == "fClef":
+            px = x
+            py = y - 24.0
+        elif name == "cClef":
+            px = x
+            py = y - 33.0
+        elif name == "accidentalSharp":
+            px = x - 18.0
+            py = y - 22.0
+        elif name == "accidentalFlat":
+            px = x - 17.0
+            py = y - 28.0
+        elif name == "accidentalNatural":
+            px = x - 14.0
+            py = y - 22.0
+        elif name == "restWhole":
+            px = x - pw / 2.0
+            py = y
+        elif name == "restHalf":
+            px = x - pw / 2.0
+            py = y - ph
+        elif name == "restQuarter":
+            px = x - pw / 2.0
+            py = y - ph / 2.0
+        elif name == "restEighth":
+            px = x - pw / 2.0
+            py = y - 10.0
+        elif name == "restSixteenth":
+            px = x - pw / 2.0
+            py = y - 18.0
+        
+        # 4. Construct vertex data
+        let r = color[0]
+        let g_val = color[1]
+        let b = color[2]
+        let a = color[3]
+        
+        let vertices = [
+            px, py,        u0, v0,  r, g_val, b, a,
+            px, py + ph,   u0, v1,  r, g_val, b, a,
+            px + pw, py + ph, u1, v1,  r, g_val, b, a,
+            
+            px, py,        u0, v0,  r, g_val, b, a,
+            px + pw, py + ph, u1, v1,  r, g_val, b, a,
+            px + pw, py,   u1, v0,  r, g_val, b, a
+        ]
+        
+        let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
+        push(self.frame_resources[self.cf], vbuf)
+        
+        # 5. Draw sprite using graphics pipeline
+        gpu.cmd_bind_graphics_pipeline(cmd, self.glyph_pipeline)
+        gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set)
+        gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
+        gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+        gpu.cmd_draw(cmd, 6, 1, 0, 0)
 
     proc draw_ui(self, cmd, ui_ctx):
         let dl = ui_ctx["draw_list"]

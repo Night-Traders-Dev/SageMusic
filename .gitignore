@@ -1,0 +1,16 @@
+# SageLang compiler build folders
+sagelang_build/
+build_sage/
+
+# Build utilities
+glslangValidator
+
+# Compiled shaders
+*.spv
+
+# OS and Editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
