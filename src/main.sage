@@ -9,10 +9,10 @@ import graphics.ui as ui
 import graphics.renderer as base_renderer
 
 # Local imports
-from model import create_empty_score, Note, Rest, Measure, Score, Part
-from renderer import MusicRenderer
-from layout import layout_score, y_to_pitch, pitch_to_y
-from command import CommandHistory, AddElementCommand, DeleteElementCommand
+from model.model import create_empty_score, Note, Rest, Measure, Score, Part
+from renderer.renderer import MusicRenderer
+from layout.layout import layout_score, y_to_pitch, pitch_to_y
+from command.command import CommandHistory, AddElementCommand, DeleteElementCommand
 
 # Helper to remove element at index
 proc remove_at(lst, idx):

@@ -9,7 +9,7 @@ import json
 import graphics.math3d as math3d
 import graphics.renderer as base_renderer
 from graphics.mesh import mesh_vertex_binding, mesh_vertex_attribs
-from layout import pitch_to_y
+from layout.layout import pitch_to_y
 
 # ============================================================================
 # Glyph Mapping (SMuFL snippets)
@@ -151,9 +151,9 @@ class MusicRenderer:
         self.sprite_pipe_layout = gpu.create_pipeline_layout([self.sprite_desc_layout], 64, gpu.STAGE_VERTEX)
         
         # 5. Load Compiled Shaders
-        let vert_shader = gpu.load_shader("src/sprite.vert.spv", gpu.STAGE_VERTEX)
-        let frag_shader = gpu.load_shader("src/sprite.frag.spv", gpu.STAGE_FRAGMENT)
-        let font_frag_shader = gpu.load_shader("src/font.frag.spv", gpu.STAGE_FRAGMENT)
+        let vert_shader = gpu.load_shader("src/renderer/sprite.vert.spv", gpu.STAGE_VERTEX)
+        let frag_shader = gpu.load_shader("src/renderer/sprite.frag.spv", gpu.STAGE_FRAGMENT)
+        let font_frag_shader = gpu.load_shader("src/renderer/font.frag.spv", gpu.STAGE_FRAGMENT)
         if vert_shader < 0 or frag_shader < 0 or font_frag_shader < 0:
             raise "Failed to load sprite or font shaders"
         
