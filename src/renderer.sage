@@ -56,7 +56,7 @@ class MusicRenderer:
             self.atlas_data = nil
         
         # Shader constants (Projection Matrix)
-        self.proj = math3d.mat4_ortho(0, width, height, 0, -1, 1)
+        self.proj = math3d.mat4_ortho(0, width, 0, height, -1, 1)
         
         # Shaders (Reusing pre-compiled shader modules)
         let vert = gpu.load_shader("../SageLang/core/examples/shaders/cube.vert.spv", gpu.STAGE_VERTEX)
