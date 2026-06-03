@@ -9,7 +9,7 @@ import graphics.ui as ui
 import graphics.renderer as base_renderer
 
 # Local imports
-from model import create_empty_score, Note, Rest, Measure
+from model import create_empty_score, Note, Rest, Measure, Score, Part
 from renderer import MusicRenderer
 from layout import layout_score, y_to_pitch, pitch_to_y
 from command import CommandHistory, AddElementCommand, DeleteElementCommand
@@ -69,7 +69,7 @@ proc find_hovered_measure(score, mx, my):
     let part_idx = 0
     while part_idx < len(score.parts):
         let part = score.parts[part_idx]
-        let cur_x = 50.0
+        let cur_x = 270.0
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
@@ -93,14 +93,14 @@ proc find_hovered_note(score, mx, my):
     let part_idx = 0
     while part_idx < len(score.parts):
         let part = score.parts[part_idx]
-        let cur_x = 50.0
+        let cur_x = 270.0
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
             let v_idx = 0
             while v_idx < len(measure.voices):
                 let voice = measure.voices[v_idx]
-                let elem_x = cur_x + 20.0
+                let elem_x = cur_x + 65.0
                 let e_idx = 0
                 while e_idx < len(voice.elements):
                     let elem = voice.elements[e_idx]
@@ -151,42 +151,68 @@ proc main():
     # Initialize Undo/Redo history
     let history = CommandHistory()
     
-    # 3. Initialize Data Model
-    let score = create_empty_score("Untitled Symphony")
+    # 3. Initialize Data Model with 3 separate parts (staffs)
+    let score = Score("Untitled Symphony")
     
-    # Add some demo notes to Measure 1 (Treble Clef)
+    let treble_part = Part("Treble Staff")
+    let alto_part = Part("Alto Staff")
+    let bass_part = Part("Bass Staff")
+    
+    let i = 0
+    while i < 2:
+        let m_treble = Measure()
+        m_treble.clef = "treble"
+        treble_part.add_measure(m_treble)
+        
+        let m_alto = Measure()
+        m_alto.clef = "alto"
+        alto_part.add_measure(m_alto)
+        
+        let m_bass = Measure()
+        m_bass.clef = "bass"
+        bass_part.add_measure(m_bass)
+        
+        i = i + 1
+        
+    score.add_part(treble_part)
+    score.add_part(alto_part)
+    score.add_part(bass_part)
+    
+    # Add some demo notes to Treble Staff, Measure 1
     let v1 = score.parts[0].measures[0].get_voice(0)
     v1.add_element(Note("C4", 0.25))
     v1.add_element(Note("E4", 0.25))
     v1.add_element(Note("G4", 0.25))
     v1.add_element(Rest(0.25))
 
-    # Measure 2 (Bass Clef)
-    let m2 = score.parts[0].measures[1]
-    m2.clef = "bass"
-    let v2 = m2.get_voice(0)
-    v2.add_element(Note("G2", 0.25))
-    v2.add_element(Note("B2", 0.25))
-    v2.add_element(Note("D3", 0.25))
-    v2.add_element(Note("F#3", 0.25))
+    # Treble Staff, Measure 2 (Ledger lines & Flats)
+    let v4 = score.parts[0].measures[1].get_voice(0)
+    v4.add_element(Note("A3", 0.25)) # Ledger line below
+    v4.add_element(Note("C4", 0.25)) # Ledger line below
+    v4.add_element(Note("Bb4", 0.25)) # Flat accidental
+    v4.add_element(Note("A5", 0.25)) # Ledger line above
 
-    # Measure 3 (Alto Clef)
-    let m3 = score.parts[0].measures[2]
-    m3.clef = "alto"
-    let v3 = m3.get_voice(0)
+    # Alto Staff, Measure 1
+    let v3 = score.parts[1].measures[0].get_voice(0)
     v3.add_element(Note("F3", 0.25))
     v3.add_element(Note("C4", 0.25))
     v3.add_element(Note("E4", 0.25))
     v3.add_element(Note("G4", 0.25))
 
-    # Measure 4 (Treble Clef - Ledger lines & Flats)
-    let m4 = score.parts[0].measures[3]
-    m4.clef = "treble"
-    let v4 = m4.get_voice(0)
-    v4.add_element(Note("A3", 0.25)) # Ledger line below
-    v4.add_element(Note("C4", 0.25)) # Ledger line below
-    v4.add_element(Note("Bb4", 0.25)) # Flat accidental
-    v4.add_element(Note("A5", 0.25)) # Ledger line above
+    # Alto Staff, Measure 2 (Whole rest)
+    let v3_2 = score.parts[1].measures[1].get_voice(0)
+    v3_2.add_element(Rest(1.0))
+
+    # Bass Staff, Measure 1
+    let v2 = score.parts[2].measures[0].get_voice(0)
+    v2.add_element(Note("G2", 0.25))
+    v2.add_element(Note("B2", 0.25))
+    v2.add_element(Note("D3", 0.25))
+    v2.add_element(Note("F#3", 0.25))
+
+    # Bass Staff, Measure 2 (Whole rest)
+    let v2_2 = score.parts[2].measures[1].get_voice(0)
+    v2_2.add_element(Rest(1.0))
 
     # Editor State Context
     let editor_ctx = {}
@@ -399,7 +425,7 @@ proc main():
                 editor_ctx["selected_element"] = nil
         
         # Layout Pass (only if dirty, but every frame for now)
-        layout_score(score, renderer.base["width"] - 250.0) # score width minus sidebar
+        layout_score(score, renderer.base["width"] - 290.0) # score width minus sidebar and padding
         
         # Rendering Pass
         renderer.draw_score(frame_info, score)

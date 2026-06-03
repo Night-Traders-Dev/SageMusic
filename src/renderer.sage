@@ -276,7 +276,7 @@ class MusicRenderer:
             self.draw_note_preview(cmd, pr["x"], pr["y"], pr["duration"])
 
     proc draw_part(self, cmd, part, y):
-        let cur_x = 50.0
+        let cur_x = 270.0
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
