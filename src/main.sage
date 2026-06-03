@@ -785,14 +785,15 @@ proc main():
         # Draw SMuFL icons on top of Simple Entry buttons for real Finale feel
         if editor_ctx["current_tool"] == "note_entry":
             let cmd = frame_info["cmd"]
-            renderer.draw_glyph(cmd, "noteheadWhole", 35.0, 345.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "noteheadHalf", 145.0, 345.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "noteheadBlack", 35.0, 385.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "noteheadBlack", 145.0, 385.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "noteheadBlack", 35.0, 425.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "accidentalSharp", 145.0, 425.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "accidentalFlat", 35.0, 465.0, [1.0, 1.0, 1.0, 1.0])
-            renderer.draw_glyph(cmd, "accidentalNatural", 145.0, 465.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("noteheadWhole", 35.0, 345.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("noteheadHalf", 145.0, 345.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("noteheadBlack", 35.0, 385.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("noteheadBlack", 145.0, 385.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("noteheadBlack", 35.0, 425.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("accidentalSharp", 145.0, 425.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("accidentalFlat", 35.0, 465.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.add_glyph("accidentalNatural", 145.0, 465.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.flush_batches(cmd)
         
         renderer.end_frame(frame_info)
 
