@@ -33,6 +33,19 @@ let SMUFL = {
     "time_4": 0xE084
 }
 
+# Helper to prevent path traversal
+proc sanitize_path(path):
+    if path == nil or len(path) == 0:
+        return ""
+    if path[0] == "/":
+        return "" # No absolute paths
+    let i = 0
+    while i < len(path) - 1:
+        if path[i] == "." and path[i+1] == ".":
+            return "" # No traversal
+        i = i + 1
+    return path
+
 # ============================================================================
 # Render Context
 # ============================================================================
@@ -47,11 +60,15 @@ class MusicRenderer:
         self.preview_info = nil
 
         # Load Atlas Metadata JSON
-        if io.exists("assets/bravura_atlas.json"):
-            let meta_str = io.readfile("assets/bravura_atlas.json")
+        let atlas_path = sanitize_path("assets/bravura_atlas.json")
+        if io.exists(atlas_path):
+            let meta_str = io.readfile(atlas_path)
             let root = json.cJSON_Parse(meta_str)
-            self.atlas_data = json.cJSON_ToSage(root)
-            json.cJSON_Delete(root)
+            if root != nil:
+                self.atlas_data = json.cJSON_ToSage(root)
+                json.cJSON_Delete(root)
+            else:
+                self.atlas_data = nil
         else:
             self.atlas_data = nil
         
@@ -59,15 +76,30 @@ class MusicRenderer:
         self.proj = math3d.mat4_ortho(0, width, 0, height, -1, 1)
         
         # Shaders (Reusing pre-compiled shader modules)
-        let vert = gpu.load_shader("../SageLang/core/examples/shaders/cube.vert.spv", gpu.STAGE_VERTEX)
-        let frag = gpu.load_shader("../SageLang/core/examples/shaders/text3d.frag.spv", gpu.STAGE_FRAGMENT)
+        # SEC-FS-7: Fixed path traversal by making paths local to project
+        let vert_path = sanitize_path("assets/shaders/cube.vert.spv")
+        let frag_path = sanitize_path("assets/shaders/text3d.frag.spv")
+        
+        let vert = -1
+        let frag = -1
+        if io.exists(vert_path) and io.exists(frag_path):
+            vert = gpu.load_shader(vert_path, gpu.STAGE_VERTEX)
+            frag = gpu.load_shader(frag_path, gpu.STAGE_FRAGMENT)
+
         if vert < 0 or frag < 0:
-            raise "Failed to load primitive shaders"
+            # Fallback to local sprite shaders if common shaders are missing
+            vert = gpu.load_shader(sanitize_path("src/renderer/sprite.vert.spv"), gpu.STAGE_VERTEX)
+            frag = gpu.load_shader(sanitize_path("src/renderer/sprite.frag.spv"), gpu.STAGE_FRAGMENT)
+            
+            if vert < 0 or frag < 0:
+                print "Error: Failed to load primitive shaders. Please ensure assets/shaders or src/renderer contains valid SPV files."
+                return
 
         # Pipeline Layout (64-byte push constant for projection matrix)
         self.pipe_layout = gpu.create_pipeline_layout([], 64, gpu.STAGE_VERTEX)
         if self.pipe_layout < 0:
-            raise "Failed to create pipeline layout"
+            print "Error: Failed to create pipeline layout"
+            return
 
         # Line Pipeline (Staff lines, stems, measure barlines)
         let line_cfg = {}
@@ -111,6 +143,12 @@ class MusicRenderer:
         # Dynamic Resource Tracking for frames in flight
         self.frame_resources = [[], []]
         self.cf = 0
+        
+        # Batching buffers
+        self.line_vertices = []
+        self.rect_vertices = []
+        self.glyph_vertices = []
+        self.font_vertices = []
 
     proc create_glyph_pipeline(self):
         # 1. Create Descriptor Set Layout
@@ -129,20 +167,33 @@ class MusicRenderer:
         self.sprite_desc_set = gpu.allocate_descriptor_set(self.sprite_desc_pool, self.sprite_desc_layout)
         
         # 3. Load Sprite Texture & Sampler
-        self.sprite_texture = gpu.load_texture("assets/bravura_atlas.png")
+        let sprite_path = sanitize_path("assets/bravura_atlas.png")
+        if io.exists(sprite_path):
+            self.sprite_texture = gpu.load_texture(sprite_path)
+        else:
+            self.sprite_texture = -1
+
         self.sprite_sampler = gpu.create_sampler(gpu.FILTER_LINEAR, gpu.FILTER_LINEAR, gpu.ADDRESS_CLAMP_EDGE)
-        gpu.update_descriptor_image(self.sprite_desc_set, 0, self.sprite_texture, self.sprite_sampler)
+        if self.sprite_texture >= 0:
+            gpu.update_descriptor_image(self.sprite_desc_set, 0, self.sprite_texture, self.sprite_sampler)
         
         # 3.1 Load UI Font (Lato)
-        if io.exists("assets/lato.ttf"):
-            self.ui_font = gpu.load_font("assets/lato.ttf", 16)
+        let font_path = sanitize_path("assets/lato.ttf")
+        if io.exists(font_path):
+            self.ui_font = gpu.load_font(font_path, 16)
             let f_atlas = gpu.font_atlas(self.ui_font)
-            let f_tex = gpu.load_texture(f_atlas["path"])
-            let f_smp = gpu.create_sampler(gpu.FILTER_LINEAR, gpu.FILTER_LINEAR, gpu.ADDRESS_CLAMP_EDGE)
-            gpu.font_set_atlas(self.ui_font, f_tex, f_smp)
+            let f_tex_path = sanitize_path(f_atlas["path"])
+            let f_tex = -1
+            if io.exists(f_tex_path):
+                f_tex = gpu.load_texture(f_tex_path)
             
-            self.font_desc_set = gpu.allocate_descriptor_set(self.sprite_desc_pool, self.sprite_desc_layout)
-            gpu.update_descriptor_image(self.font_desc_set, 0, f_tex, f_smp)
+            let f_smp = gpu.create_sampler(gpu.FILTER_LINEAR, gpu.FILTER_LINEAR, gpu.ADDRESS_CLAMP_EDGE)
+            if f_tex >= 0:
+                gpu.font_set_atlas(self.ui_font, f_tex, f_smp)
+                self.font_desc_set = gpu.allocate_descriptor_set(self.sprite_desc_pool, self.sprite_desc_layout)
+                gpu.update_descriptor_image(self.font_desc_set, 0, f_tex, f_smp)
+            else:
+                self.font_desc_set = -1
         else:
             self.ui_font = nil
             self.font_desc_set = -1
@@ -151,11 +202,22 @@ class MusicRenderer:
         self.sprite_pipe_layout = gpu.create_pipeline_layout([self.sprite_desc_layout], 64, gpu.STAGE_VERTEX)
         
         # 5. Load Compiled Shaders
-        let vert_shader = gpu.load_shader("src/renderer/sprite.vert.spv", gpu.STAGE_VERTEX)
-        let frag_shader = gpu.load_shader("src/renderer/sprite.frag.spv", gpu.STAGE_FRAGMENT)
-        let font_frag_shader = gpu.load_shader("src/renderer/font.frag.spv", gpu.STAGE_FRAGMENT)
+        let s_vert_path = sanitize_path("src/renderer/sprite.vert.spv")
+        let s_frag_path = sanitize_path("src/renderer/sprite.frag.spv")
+        let f_frag_path = sanitize_path("src/renderer/font.frag.spv")
+        
+        let vert_shader = -1
+        let frag_shader = -1
+        let font_frag_shader = -1
+        
+        if io.exists(s_vert_path) and io.exists(s_frag_path) and io.exists(f_frag_path):
+            vert_shader = gpu.load_shader(s_vert_path, gpu.STAGE_VERTEX)
+            frag_shader = gpu.load_shader(s_frag_path, gpu.STAGE_FRAGMENT)
+            font_frag_shader = gpu.load_shader(f_frag_path, gpu.STAGE_FRAGMENT)
+
         if vert_shader < 0 or frag_shader < 0 or font_frag_shader < 0:
-            raise "Failed to load sprite or font shaders"
+            print "Error: Failed to load sprite or font shaders"
+            return -1
         
         # 6. Graphics Pipeline Setup
         let s_vb = {}
@@ -197,13 +259,15 @@ class MusicRenderer:
         
         let pipeline = gpu.create_graphics_pipeline(s_cfg)
         if pipeline < 0:
-            raise "Failed to create glyph pipeline"
+            print "Error: Failed to create glyph pipeline"
+            return -1
             
         # Create font pipeline
         s_cfg["fragment_shader"] = font_frag_shader
         self.font_pipeline = gpu.create_graphics_pipeline(s_cfg)
         if self.font_pipeline < 0:
-            raise "Failed to create font pipeline"
+            print "Error: Failed to create font pipeline"
+            return -1
             
         return pipeline
 
@@ -259,6 +323,12 @@ class MusicRenderer:
         self.cf = frame_info["current_frame"]
         let cmd = frame_info["cmd"]
         
+        # Reset batches
+        self.line_vertices = []
+        self.rect_vertices = []
+        self.glyph_vertices = []
+        self.font_vertices = []
+        
         # Draw Paper White background covering the screen (to the right of sidebar)
         self.draw_rect(cmd, 250.0, 0.0, self.base["width"] - 250.0, self.base["height"], [0.98, 0.98, 0.96, 1.0])
         
@@ -272,6 +342,48 @@ class MusicRenderer:
         if self.preview_info != nil:
             let pr = self.preview_info
             self.draw_note_preview(cmd, pr["x"], pr["y"], pr["duration"])
+            
+        # Flush all batches
+        self.flush_batches(cmd)
+
+    proc flush_batches(self, cmd):
+        # 1. Flush Lines
+        if len(self.line_vertices) > 0:
+            let vbuf = gpu.upload_device_local(self.line_vertices, gpu.BUFFER_VERTEX)
+            push(self.frame_resources[self.cf], vbuf)
+            gpu.cmd_bind_graphics_pipeline(cmd, self.line_pipeline)
+            gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+            gpu.cmd_draw(cmd, len(self.line_vertices) / 8, 1, 0, 0)
+            
+        # 2. Flush Rects
+        if len(self.rect_vertices) > 0:
+            let vbuf = gpu.upload_device_local(self.rect_vertices, gpu.BUFFER_VERTEX)
+            push(self.frame_resources[self.cf], vbuf)
+            gpu.cmd_bind_graphics_pipeline(cmd, self.rect_pipeline)
+            gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+            gpu.cmd_draw(cmd, len(self.rect_vertices) / 8, 1, 0, 0)
+            
+        # 3. Flush Glyphs
+        if len(self.glyph_vertices) > 0:
+            let vbuf = gpu.upload_device_local(self.glyph_vertices, gpu.BUFFER_VERTEX)
+            push(self.frame_resources[self.cf], vbuf)
+            gpu.cmd_bind_graphics_pipeline(cmd, self.glyph_pipeline)
+            gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set, 0)
+            gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+            gpu.cmd_draw(cmd, len(self.glyph_vertices) / 8, 1, 0, 0)
+            
+        # 4. Flush Fonts
+        if len(self.font_vertices) > 0:
+            let vbuf = gpu.upload_device_local(self.font_vertices, gpu.BUFFER_VERTEX)
+            push(self.frame_resources[self.cf], vbuf)
+            gpu.cmd_bind_graphics_pipeline(cmd, self.font_pipeline)
+            gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.font_desc_set, 0)
+            gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+            gpu.cmd_draw(cmd, len(self.font_vertices) / 8, 1, 0, 0)
 
     proc draw_part(self, cmd, part, part_idx, score, view_mode):
         let m_idx = 0
@@ -336,10 +448,9 @@ class MusicRenderer:
             elif num_accidentals == 2:
                 ts_x = x + 65.0
 
-            let ts_top = str(measure.time_signature[0])
-            let ts_bot = str(measure.time_signature[1])
-            self.draw_text(cmd, ts_top, ts_x, y + 22.0, [0.0, 0.0, 0.0, 1.0])
-            self.draw_text(cmd, ts_bot, ts_x, y + 10.0, [0.0, 0.0, 0.0, 1.0])
+            # PERF-MA-17: Using cached strings instead of str() every frame
+            self.draw_text(cmd, measure.ts_top_str, ts_x, y + 22.0, [0.0, 0.0, 0.0, 1.0])
+            self.draw_text(cmd, measure.ts_bot_str, ts_x, y + 10.0, [0.0, 0.0, 0.0, 1.0])
 
         # 3. Draw Elements in voices
         let v_idx = 0
@@ -355,13 +466,14 @@ class MusicRenderer:
         let e_idx = 0
         while e_idx < len(voice.elements):
             let element = voice.elements[e_idx]
-            # Simple layout: linear placement
+            let elem_w = get_element_width(element)
+            
             if element.type == "Note":
                 self.draw_note(cmd, element, cur_x, y, clef)
-                cur_x = cur_x + 50.0
+                cur_x = cur_x + elem_w
             elif element.type == "Rest":
                 self.draw_rest(cmd, element, cur_x, y)
-                cur_x = cur_x + 50.0
+                cur_x = cur_x + elem_w
             e_idx = e_idx + 1
 
     proc draw_note(self, cmd, note, x, y, clef):
@@ -467,7 +579,11 @@ class MusicRenderer:
         if self.atlas_data == nil:
             return
         
+        # SEC-EH-16: JSON schema validation
         let glyphs = self.atlas_data["glyphs"]
+        if glyphs == nil:
+            return
+            
         let g = glyphs[name]
         if g == nil:
             return
@@ -475,6 +591,9 @@ class MusicRenderer:
         # 2. Determine texture coords (UVs)
         let tw = self.atlas_data["texture_width"]
         let th = self.atlas_data["texture_height"]
+        
+        if tw == nil or th == nil or tw == 0.0 or th == 0.0:
+            return
         
         let u0 = g["x"] / tw
         let v0 = g["y"] / th
@@ -530,25 +649,61 @@ class MusicRenderer:
         let b = color[2]
         let a = color[3]
         
-        let vertices = [
-            px, py,        u0, v0,  r, g_val, b, a,
-            px, py + ph,   u0, v1,  r, g_val, b, a,
-            px + pw, py + ph, u1, v1,  r, g_val, b, a,
-            
-            px, py,        u0, v0,  r, g_val, b, a,
-            px + pw, py + ph, u1, v1,  r, g_val, b, a,
-            px + pw, py,   u1, v0,  r, g_val, b, a
-        ]
+        # Triangle 1
+        push(self.glyph_vertices, px)
+        push(self.glyph_vertices, py)
+        push(self.glyph_vertices, u0)
+        push(self.glyph_vertices, v0)
+        push(self.glyph_vertices, r)
+        push(self.glyph_vertices, g_val)
+        push(self.glyph_vertices, b)
+        push(self.glyph_vertices, a)
         
-        let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
-        push(self.frame_resources[self.cf], vbuf)
+        push(self.glyph_vertices, px)
+        push(self.glyph_vertices, py + ph)
+        push(self.glyph_vertices, u0)
+        push(self.glyph_vertices, v1)
+        push(self.glyph_vertices, r)
+        push(self.glyph_vertices, g_val)
+        push(self.glyph_vertices, b)
+        push(self.glyph_vertices, a)
         
-        # 5. Draw sprite using graphics pipeline (passing 0 for VK_PIPELINE_BIND_POINT_GRAPHICS)
-        gpu.cmd_bind_graphics_pipeline(cmd, self.glyph_pipeline)
-        gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set, 0)
-        gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
-        gpu.cmd_bind_vertex_buffer(cmd, vbuf)
-        gpu.cmd_draw(cmd, 6, 1, 0, 0)
+        push(self.glyph_vertices, px + pw)
+        push(self.glyph_vertices, py + ph)
+        push(self.glyph_vertices, u1)
+        push(self.glyph_vertices, v1)
+        push(self.glyph_vertices, r)
+        push(self.glyph_vertices, g_val)
+        push(self.glyph_vertices, b)
+        push(self.glyph_vertices, a)
+        
+        # Triangle 2
+        push(self.glyph_vertices, px)
+        push(self.glyph_vertices, py)
+        push(self.glyph_vertices, u0)
+        push(self.glyph_vertices, v0)
+        push(self.glyph_vertices, r)
+        push(self.glyph_vertices, g_val)
+        push(self.glyph_vertices, b)
+        push(self.glyph_vertices, a)
+        
+        push(self.glyph_vertices, px + pw)
+        push(self.glyph_vertices, py + ph)
+        push(self.glyph_vertices, u1)
+        push(self.glyph_vertices, v1)
+        push(self.glyph_vertices, r)
+        push(self.glyph_vertices, g_val)
+        push(self.glyph_vertices, b)
+        push(self.glyph_vertices, a)
+        
+        push(self.glyph_vertices, px + pw)
+        push(self.glyph_vertices, py)
+        push(self.glyph_vertices, u1)
+        push(self.glyph_vertices, v0)
+        push(self.glyph_vertices, r)
+        push(self.glyph_vertices, g_val)
+        push(self.glyph_vertices, b)
+        push(self.glyph_vertices, a)
 
     proc draw_text(self, cmd, text, x, y, color):
         if self.ui_font == nil or self.font_desc_set < 0:
@@ -558,14 +713,10 @@ class MusicRenderer:
         if len(vertices) == 0:
             return
             
-        let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
-        push(self.frame_resources[self.cf], vbuf)
-        
-        gpu.cmd_bind_graphics_pipeline(cmd, self.font_pipeline)
-        gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.font_desc_set, 0)
-        gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
-        gpu.cmd_bind_vertex_buffer(cmd, vbuf)
-        gpu.cmd_draw(cmd, len(vertices) / 8, 1, 0, 0)
+        let i = 0
+        while i < len(vertices):
+            push(self.font_vertices, vertices[i])
+            i = i + 1
 
     proc draw_ui(self, cmd, ui_ctx):
         let dl = ui_ctx["draw_list"]
@@ -579,36 +730,85 @@ class MusicRenderer:
             i = i + 1
 
     proc draw_line(self, cmd, x1, y1, x2, y2, color):
-        let vertices = [
-            x1, y1, 0.0,  color[0], color[1], color[2],  0.0, 0.0,
-            x2, y2, 0.0,  color[0], color[1], color[2],  0.0, 0.0
-        ]
-        let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
-        push(self.frame_resources[self.cf], vbuf)
+        push(self.line_vertices, x1)
+        push(self.line_vertices, y1)
+        push(self.line_vertices, 0.0)
+        push(self.line_vertices, color[0])
+        push(self.line_vertices, color[1])
+        push(self.line_vertices, color[2])
+        push(self.line_vertices, 0.0)
+        push(self.line_vertices, 0.0)
         
-        gpu.cmd_bind_graphics_pipeline(cmd, self.line_pipeline)
-        gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
-        gpu.cmd_bind_vertex_buffer(cmd, vbuf)
-        gpu.cmd_draw(cmd, 2, 1, 0, 0)
+        push(self.line_vertices, x2)
+        push(self.line_vertices, y2)
+        push(self.line_vertices, 0.0)
+        push(self.line_vertices, color[0])
+        push(self.line_vertices, color[1])
+        push(self.line_vertices, color[2])
+        push(self.line_vertices, 0.0)
+        push(self.line_vertices, 0.0)
 
     proc draw_rect(self, cmd, x, y, w, h, color):
         let r_val = color[0]
         let g_val = color[1]
         let b_val = color[2]
         
-        let vertices = [
-            x, y, 0.0,      r_val, g_val, b_val,  0.0, 0.0,  # TL
-            x, y + h, 0.0,  r_val, g_val, b_val,  0.0, 0.0,  # BL
-            x + w, y + h, 0.0, r_val, g_val, b_val, 0.0, 0.0,  # BR
-            
-            x, y, 0.0,      r_val, g_val, b_val,  0.0, 0.0,  # TL
-            x + w, y + h, 0.0, r_val, g_val, b_val, 0.0, 0.0,  # BR
-            x + w, y, 0.0,  r_val, g_val, b_val,  0.0, 0.0   # TR
-        ]
-        let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
-        push(self.frame_resources[self.cf], vbuf)
+        # TL
+        push(self.rect_vertices, x)
+        push(self.rect_vertices, y)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, r_val)
+        push(self.rect_vertices, g_val)
+        push(self.rect_vertices, b_val)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, 0.0)
         
-        gpu.cmd_bind_graphics_pipeline(cmd, self.rect_pipeline)
-        gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
-        gpu.cmd_bind_vertex_buffer(cmd, vbuf)
-        gpu.cmd_draw(cmd, 6, 1, 0, 0)
+        # BL
+        push(self.rect_vertices, x)
+        push(self.rect_vertices, y + h)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, r_val)
+        push(self.rect_vertices, g_val)
+        push(self.rect_vertices, b_val)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, 0.0)
+        
+        # BR
+        push(self.rect_vertices, x + w)
+        push(self.rect_vertices, y + h)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, r_val)
+        push(self.rect_vertices, g_val)
+        push(self.rect_vertices, b_val)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, 0.0)
+        
+        # TL
+        push(self.rect_vertices, x)
+        push(self.rect_vertices, y)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, r_val)
+        push(self.rect_vertices, g_val)
+        push(self.rect_vertices, b_val)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, 0.0)
+        
+        # BR
+        push(self.rect_vertices, x + w)
+        push(self.rect_vertices, y + h)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, r_val)
+        push(self.rect_vertices, g_val)
+        push(self.rect_vertices, b_val)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, 0.0)
+        
+        # TR
+        push(self.rect_vertices, x + w)
+        push(self.rect_vertices, y)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, r_val)
+        push(self.rect_vertices, g_val)
+        push(self.rect_vertices, b_val)
+        push(self.rect_vertices, 0.0)
+        push(self.rect_vertices, 0.0)

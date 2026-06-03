@@ -18,6 +18,7 @@ class AddElementCommand(Command):
         # Set element's parent to the voice
         self.element.parent = self.voice
         push(self.voice.elements, self.element)
+        self.voice.mark_dirty()
 
     proc undo(self):
         # Remove element from voice
@@ -28,6 +29,7 @@ class AddElementCommand(Command):
                 push(new_list, self.voice.elements[i])
             i = i + 1
         self.voice.elements = new_list
+        self.voice.mark_dirty()
 
 class DeleteElementCommand(Command):
     proc init(self, voice, element):
@@ -52,6 +54,7 @@ class DeleteElementCommand(Command):
                     push(new_list, self.voice.elements[i])
                 i = i + 1
             self.voice.elements = new_list
+            self.voice.mark_dirty()
 
     proc undo(self):
         if self.index >= 0:
@@ -65,6 +68,7 @@ class DeleteElementCommand(Command):
             if len(new_list) == len(self.voice.elements):
                 push(new_list, self.element)
             self.voice.elements = new_list
+            self.voice.mark_dirty()
 
 class CommandHistory:
     proc init(self):

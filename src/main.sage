@@ -11,7 +11,7 @@ import graphics.renderer as base_renderer
 # Local imports
 from model.model import create_empty_score, Note, Rest, Measure, Score, Part
 from renderer.renderer import MusicRenderer
-from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos
+from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width
 from command.command import CommandHistory, AddElementCommand, DeleteElementCommand
 
 # Helper to remove element at index
@@ -63,6 +63,27 @@ proc clear_hovered_delete(score):
             m_idx = m_idx + 1
         p_idx = p_idx + 1
 
+# Safe access helpers
+proc get_safe_part(score, p_idx):
+    if p_idx >= 0 and p_idx < len(score.parts):
+        return score.parts[p_idx]
+    return nil
+
+proc get_safe_measure(part, m_idx):
+    if part != nil and m_idx >= 0 and m_idx < len(part.measures):
+        return part.measures[m_idx]
+    return nil
+
+proc get_safe_voice(measure, v_idx):
+    if measure != nil and v_idx >= 0 and v_idx < len(measure.voices):
+        return measure.voices[v_idx]
+    return nil
+
+proc get_safe_element(voice, e_idx):
+    if voice != nil and e_idx >= 0 and e_idx < len(voice.elements):
+        return voice.elements[e_idx]
+    return nil
+
 # Helper to find which measure boundaries enclose the mouse coordinate
 proc find_hovered_measure(score, mx, my, view_mode):
     let part_idx = 0
@@ -71,9 +92,13 @@ proc find_hovered_measure(score, mx, my, view_mode):
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
-            let pos = get_measure_layout_pos(part_idx, m_idx, score, view_mode)
-            let cur_x = pos["x"]
-            let cur_y = pos["y"]
+            let cur_x = measure.layout_x
+            let cur_y = measure.layout_y
+            
+            # Spatial pruning: if mx is before this measure, it can't be in any subsequent measure in this part (scroll mode)
+            if view_mode == "scroll" and mx < cur_x:
+                break
+
             if mx >= cur_x and mx <= cur_x + measure.width:
                 if my >= cur_y - 40.0 and my <= cur_y + 32.0 + 40.0:
                     let res = {}
@@ -94,9 +119,14 @@ proc find_hovered_note(score, mx, my, view_mode):
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
-            let pos = get_measure_layout_pos(part_idx, m_idx, score, view_mode)
-            let cur_x = pos["x"]
-            let cur_y = pos["y"]
+            let cur_x = measure.layout_x
+            let cur_y = measure.layout_y
+            
+            # Early exit if mouse is not even near this measure
+            if mx < cur_x - 50.0 or mx > cur_x + measure.width + 50.0:
+                m_idx = m_idx + 1
+                continue
+                
             let v_idx = 0
             while v_idx < len(measure.voices):
                 let voice = measure.voices[v_idx]
@@ -112,6 +142,13 @@ proc find_hovered_note(score, mx, my, view_mode):
                 let e_idx = 0
                 while e_idx < len(voice.elements):
                     let elem = voice.elements[e_idx]
+                    
+                    let elem_w = get_element_width(elem)
+                    
+                    # Early exit for elements if mx is past them
+                    if mx < elem_x - 30.0:
+                        break
+                    
                     if elem.type == "Note":
                         let step_offset = pitch_to_y(measure.clef, elem.pitch)
                         let elem_y = cur_y + 32.0 - step_offset
@@ -135,7 +172,7 @@ proc find_hovered_note(score, mx, my, view_mode):
                             res["voice_idx"] = v_idx
                             res["element_idx"] = e_idx
                             return res
-                    elem_x = elem_x + 50.0
+                    elem_x = elem_x + elem_w
                     e_idx = e_idx + 1
                 v_idx = v_idx + 1
             m_idx = m_idx + 1
@@ -235,6 +272,8 @@ proc main():
     editor_ctx["selected_accidental"] = nil
     editor_ctx["selected_element"] = nil
     editor_ctx["selected_element_info"] = nil
+    editor_ctx["last_mouse_x"] = 0.0
+    editor_ctx["last_mouse_y"] = 0.0
     editor_ctx["view_mode"] = "page"
     editor_ctx["active_menu"] = nil
     editor_ctx["modal_active"] = nil
@@ -245,6 +284,9 @@ proc main():
     # 4. Main Loop
     while true:
         if should_exit:
+            break
+        
+        if renderer.base == nil:
             break
             
         let frame_info = renderer.begin_frame()
@@ -538,168 +580,201 @@ proc main():
         # E. INTERACTIVE DIALOG MODALS
         if editor_ctx["modal_active"] == "time_signature":
             let m_info = editor_ctx["modal_measure_info"]
-            let target_measure = score.parts[m_info["part_idx"]].measures[m_info["measure_idx"]]
+            let target_part = get_safe_part(score, m_info["part_idx"])
+            let target_measure = get_safe_measure(target_part, m_info["measure_idx"])
             
-            ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
-            ui.ui_label(ui_ctx, 460, 230, "Select Time Signature")
-            
-            if ui.ui_button(ui_ctx, 480, 275, 140, 35, "4/4 Time"):
-                target_measure.time_signature = (4, 4)
+            if target_measure == nil:
                 editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 630, 275, 140, 35, "3/4 Time"):
-                target_measure.time_signature = (3, 4)
-                editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 480, 325, 140, 35, "2/4 Time"):
-                target_measure.time_signature = (2, 4)
-                editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 630, 325, 140, 35, "6/8 Time"):
-                target_measure.time_signature = (6, 8)
-                editor_ctx["modal_active"] = nil
+            else:
+                ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
+                ui.ui_label(ui_ctx, 460, 230, "Select Time Signature")
                 
-            if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
-                editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 480, 275, 140, 35, "4/4 Time"):
+                    target_measure.set_time_signature(4, 4)
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 630, 275, 140, 35, "3/4 Time"):
+                    target_measure.set_time_signature(3, 4)
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 480, 325, 140, 35, "2/4 Time"):
+                    target_measure.set_time_signature(2, 4)
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 630, 325, 140, 35, "6/8 Time"):
+                    target_measure.set_time_signature(6, 8)
+                    editor_ctx["modal_active"] = nil
+                    
+                if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
+                    editor_ctx["modal_active"] = nil
                 
         elif editor_ctx["modal_active"] == "key_signature":
             let m_info = editor_ctx["modal_measure_info"]
-            let target_measure = score.parts[m_info["part_idx"]].measures[m_info["measure_idx"]]
+            let target_part = get_safe_part(score, m_info["part_idx"])
+            let target_measure = get_safe_measure(target_part, m_info["measure_idx"])
             
-            ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
-            ui.ui_label(ui_ctx, 460, 230, "Select Key Signature")
-            
-            if ui.ui_button(ui_ctx, 480, 275, 140, 35, "C Major"):
-                target_measure.key_signature = "C Major"
+            if target_measure == nil:
                 editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 630, 275, 140, 35, "G Major (1#)"):
-                target_measure.key_signature = "G Major"
-                editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 480, 325, 140, 35, "F Major (1b)"):
-                target_measure.key_signature = "F Major"
-                editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 630, 325, 140, 35, "D Major (2#)"):
-                target_measure.key_signature = "D Major"
-                editor_ctx["modal_active"] = nil
+            else:
+                ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
+                ui.ui_label(ui_ctx, 460, 230, "Select Key Signature")
                 
-            if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
-                editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 480, 275, 140, 35, "C Major"):
+                    target_measure.key_signature = "C Major"
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 630, 275, 140, 35, "G Major (1#)"):
+                    target_measure.key_signature = "G Major"
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 480, 325, 140, 35, "F Major (1b)"):
+                    target_measure.key_signature = "F Major"
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 630, 325, 140, 35, "D Major (2#)"):
+                    target_measure.key_signature = "D Major"
+                    editor_ctx["modal_active"] = nil
+                    
+                if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
+                    editor_ctx["modal_active"] = nil
                 
         elif editor_ctx["modal_active"] == "clef":
             let m_info = editor_ctx["modal_measure_info"]
-            let target_measure = score.parts[m_info["part_idx"]].measures[m_info["measure_idx"]]
+            let target_part = get_safe_part(score, m_info["part_idx"])
+            let target_measure = get_safe_measure(target_part, m_info["measure_idx"])
             
-            ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
-            ui.ui_label(ui_ctx, 460, 230, "Select Staff Clef")
-            
-            if ui.ui_button(ui_ctx, 480, 275, 140, 35, "Treble Clef"):
-                target_measure.clef = "treble"
+            if target_measure == nil:
                 editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 630, 275, 140, 35, "Bass Clef"):
-                target_measure.clef = "bass"
-                editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 480, 325, 140, 35, "Alto Clef"):
-                target_measure.clef = "alto"
-                editor_ctx["modal_active"] = nil
-            if ui.ui_button(ui_ctx, 630, 325, 140, 35, "Tenor Clef"):
-                target_measure.clef = "tenor"
-                editor_ctx["modal_active"] = nil
+            else:
+                ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
+                ui.ui_label(ui_ctx, 460, 230, "Select Staff Clef")
                 
-            if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
-                editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 480, 275, 140, 35, "Treble Clef"):
+                    target_measure.clef = "treble"
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 630, 275, 140, 35, "Bass Clef"):
+                    target_measure.clef = "bass"
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 480, 325, 140, 35, "Alto Clef"):
+                    target_measure.clef = "alto"
+                    editor_ctx["modal_active"] = nil
+                if ui.ui_button(ui_ctx, 630, 325, 140, 35, "Tenor Clef"):
+                    target_measure.clef = "tenor"
+                    editor_ctx["modal_active"] = nil
+                    
+                if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
+                    editor_ctx["modal_active"] = nil
 
         # UI Pass - End
         ui.ui_end_frame(ui_ctx)
         
         # Interaction Logic
-        clear_hovered_delete(score)
         let mx = ui_ctx["mouse_x"]
         let my = ui_ctx["mouse_y"]
-        let is_over_score = mx > 250 and my > 40 # Account for sidebar and top menu bar
-        
-        let hovered = find_hovered_measure(score, mx, my, editor_ctx["view_mode"])
-        
-        if is_over_score and hovered != nil and editor_ctx["modal_active"] == nil:
-            let part = score.parts[hovered["part_idx"]]
-            let measure = part.measures[hovered["measure_idx"]]
-            let voice = measure.get_voice(0)
-            
-            # Note Entry Tool
-            if editor_ctx["current_tool"] == "note_entry":
-                let pos = int((hovered["measure_y"] + 32.0 - my + 2.0) / 4.0)
-                let pitch = y_to_pitch(measure.clef, pos)
-                
-                let preview_y = hovered["measure_y"] + 32.0 - pos * 4.0
-                let preview = {}
-                preview["x"] = mx
-                preview["y"] = preview_y
-                preview["duration"] = editor_ctx["selected_duration"]
-                renderer.preview_info = preview
-                
-                if ui_ctx["mouse_clicked"]:
-                    let new_note = Note(pitch, editor_ctx["selected_duration"])
-                    if editor_ctx["selected_accidental"] != nil:
-                        new_note.accidental = editor_ctx["selected_accidental"]
-                        editor_ctx["selected_accidental"] = nil # Reset accidental after applying
-                    history.execute(AddElementCommand(voice, new_note))
+        let mouse_moved = false
+        if mx != editor_ctx["last_mouse_x"] or my != editor_ctx["last_mouse_y"]:
+            mouse_moved = true
+            editor_ctx["last_mouse_x"] = mx
+            editor_ctx["last_mouse_y"] = my
+
+        if mouse_moved or ui_ctx["mouse_clicked"] or score.dirty:
+            clear_hovered_delete(score)
+
+            let is_over_score = mx > 250 and my > 40 # Account for sidebar and top menu bar
+            let hovered = find_hovered_measure(score, mx, my, editor_ctx["view_mode"])
+
+            if is_over_score and hovered != nil and editor_ctx["modal_active"] == nil:
+                let part = get_safe_part(score, hovered["part_idx"])
+                let measure = get_safe_measure(part, hovered["measure_idx"])
+
+                if measure != nil:
+                    let voice = measure.get_voice(0)
+
+                    # Note Entry Tool
+                    if editor_ctx["current_tool"] == "note_entry":
+                        let pos = int((hovered["measure_y"] + 32.0 - my + 2.0) / 4.0)
+                        let pitch = y_to_pitch(measure.clef, pos)
+
+                        let preview_y = hovered["measure_y"] + 32.0 - pos * 4.0
+                        let preview = {}
+                        preview["x"] = mx
+                        preview["y"] = preview_y
+                        preview["duration"] = editor_ctx["selected_duration"]
+                        renderer.preview_info = preview
+
+                        if ui_ctx["mouse_clicked"]:
+                            let new_note = Note(pitch, editor_ctx["selected_duration"])
+                            if editor_ctx["selected_accidental"] != nil:
+                                new_note.set_accidental(editor_ctx["selected_accidental"])
+                                editor_ctx["selected_accidental"] = nil # Reset accidental after applying
+                            history.execute(AddElementCommand(voice, new_note))
+                    else:
+                        renderer.preview_info = nil
+
+                    # Eraser Tool
+                    if editor_ctx["current_tool"] == "eraser":
+                        let note_hover = find_hovered_note(score, mx, my, editor_ctx["view_mode"])
+                        if note_hover != nil:
+                            let target_part = get_safe_part(score, note_hover["part_idx"])
+                            let target_measure = get_safe_measure(target_part, note_hover["measure_idx"])
+                            let target_voice = get_safe_voice(target_measure, note_hover["voice_idx"])
+                            let target_elem = get_safe_element(target_voice, note_hover["element_idx"])
+
+                            if target_elem != nil:
+                                target_elem.hovered_delete = true
+                                if ui_ctx["mouse_clicked"]:
+                                    history.execute(DeleteElementCommand(target_voice, target_elem))
+
+                    # Select Tool
+                    if editor_ctx["current_tool"] == "select":
+                        let note_hover = find_hovered_note(score, mx, my, editor_ctx["view_mode"])
+                        if ui_ctx["mouse_clicked"]:
+                            clear_selection(score)
+                            editor_ctx["selected_element"] = nil
+                            if note_hover != nil:
+                                let target_part = get_safe_part(score, note_hover["part_idx"])
+                                let target_measure = get_safe_measure(target_part, note_hover["measure_idx"])
+                                let target_voice = get_safe_voice(target_measure, note_hover["voice_idx"])
+                                let target_elem = get_safe_element(target_voice, note_hover["element_idx"])
+
+                                if target_elem != nil:
+                                    target_elem.selected = true
+                                    editor_ctx["selected_element"] = target_elem
+                                    editor_ctx["selected_element_info"] = note_hover
+
+                    # Clef Tool (Click to trigger Clef dialog modal)
+                    if editor_ctx["current_tool"] == "clef":
+                        if ui_ctx["mouse_clicked"]:
+                            editor_ctx["modal_active"] = "clef"
+                            editor_ctx["modal_measure_info"] = hovered
+
+                    # Key Signature Tool (Click to trigger Key Signature dialog modal)
+                    if editor_ctx["current_tool"] == "key_signature":
+                        if ui_ctx["mouse_clicked"]:
+                            editor_ctx["modal_active"] = "key_signature"
+                            editor_ctx["modal_measure_info"] = hovered
+
+                    # Time Signature Tool (Click to trigger Time Signature dialog modal)
+                    if editor_ctx["current_tool"] == "time_signature":
+                        if ui_ctx["mouse_clicked"]:
+                            editor_ctx["modal_active"] = "time_signature"
+                            editor_ctx["modal_measure_info"] = hovered
             else:
                 renderer.preview_info = nil
-                
-            # Eraser Tool
-            if editor_ctx["current_tool"] == "eraser":
-                let note_hover = find_hovered_note(score, mx, my, editor_ctx["view_mode"])
-                if note_hover != nil:
-                    let target_measure = score.parts[note_hover["part_idx"]].measures[note_hover["measure_idx"]]
-                    let target_voice = target_measure.voices[note_hover["voice_idx"]]
-                    let target_elem = target_voice.elements[note_hover["element_idx"]]
-                    target_elem.hovered_delete = true
-                    
-                    if ui_ctx["mouse_clicked"]:
-                        history.execute(DeleteElementCommand(target_voice, target_elem))
-                        
-            # Select Tool
-            if editor_ctx["current_tool"] == "select":
-                let note_hover = find_hovered_note(score, mx, my, editor_ctx["view_mode"])
-                if ui_ctx["mouse_clicked"]:
-                    clear_selection(score)
-                    editor_ctx["selected_element"] = nil
-                    if note_hover != nil:
-                        let target_measure = score.parts[note_hover["part_idx"]].measures[note_hover["measure_idx"]]
-                        let target_voice = target_measure.voices[note_hover["voice_idx"]]
-                        let target_elem = target_voice.elements[note_hover["element_idx"]]
-                        target_elem.selected = true
-                        editor_ctx["selected_element"] = target_elem
-                        editor_ctx["selected_element_info"] = note_hover
-                        
-            # Clef Tool (Click to trigger Clef dialog modal)
-            if editor_ctx["current_tool"] == "clef":
-                if ui_ctx["mouse_clicked"]:
-                    editor_ctx["modal_active"] = "clef"
-                    editor_ctx["modal_measure_info"] = hovered
-                    
-            # Key Signature Tool (Click to trigger Key Signature dialog modal)
-            if editor_ctx["current_tool"] == "key_signature":
-                if ui_ctx["mouse_clicked"]:
-                    editor_ctx["modal_active"] = "key_signature"
-                    editor_ctx["modal_measure_info"] = hovered
 
-            # Time Signature Tool (Click to trigger Time Signature dialog modal)
-            if editor_ctx["current_tool"] == "time_signature":
-                if ui_ctx["mouse_clicked"]:
-                    editor_ctx["modal_active"] = "time_signature"
-                    editor_ctx["modal_measure_info"] = hovered
-        else:
-            renderer.preview_info = nil
-            
         # Keyboard element deletion
         if editor_ctx["selected_element"] != nil:
             if gpu.key_just_pressed(gpu.KEY_DELETE) or gpu.key_just_pressed(gpu.KEY_BACKSPACE):
                 let info = editor_ctx["selected_element_info"]
-                let target_measure = score.parts[info["part_idx"]].measures[info["measure_idx"]]
-                let target_voice = target_measure.voices[info["voice_idx"]]
-                let target_elem = editor_ctx["selected_element"]
-                history.execute(DeleteElementCommand(target_voice, target_elem))
-                editor_ctx["selected_element"] = nil
-        
-        # Layout Pass (only if dirty, but every frame for now)
-        layout_score(score, renderer.base["width"] - 290.0) # score width minus sidebar and padding
+                if info != nil:
+                    let target_part = get_safe_part(score, info["part_idx"])
+                    let target_measure = get_safe_measure(target_part, info["measure_idx"])
+                    let target_voice = get_safe_voice(target_measure, info["voice_idx"])
+                    let target_elem = editor_ctx["selected_element"]
+
+                    if target_voice != nil and target_elem != nil:
+                        history.execute(DeleteElementCommand(target_voice, target_elem))
+                        editor_ctx["selected_element"] = nil
+
+        # Layout Pass (only if dirty)
+        if score.dirty:
+            layout_score(score, renderer.base["width"] - 290.0, editor_ctx["view_mode"]) # score width minus sidebar and padding
+            score.dirty = false
+
         
         # Rendering Pass
         renderer.draw_score(frame_info, score, editor_ctx["view_mode"])

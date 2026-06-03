@@ -3,12 +3,35 @@
 # Handles spacing, rhythmic alignment, and bounds calculation
 # -----------------------------------------
 
-proc layout_score(score, view_width):
+proc layout_score(score, view_width, view_mode):
     # Iterate through all parts and calculate measure sizes
     let p_idx = 0
     while p_idx < len(score.parts):
         let part = score.parts[p_idx]
         layout_part(part, view_width)
+        
+        # 3. Calculate and cache absolute positions based on view_mode
+        # This addresses PERF-AC-5 by moving summation to the layout pass
+        let cur_x = 270.0
+        let m_idx = 0
+        while m_idx < len(part.measures):
+            let measure = part.measures[m_idx]
+            if view_mode == "scroll":
+                measure.layout_x = cur_x
+                measure.layout_y = 100.0 + p_idx * 200.0
+                cur_x = cur_x + measure.width
+            else: # "page"
+                let sys_idx = int(m_idx / 2)
+                let local_m_idx = m_idx % 2
+                
+                let px = 270.0
+                if local_m_idx == 1:
+                    px = 270.0 + part.measures[sys_idx * 2].width
+                
+                measure.layout_x = px
+                measure.layout_y = 100.0 + sys_idx * 380.0 + p_idx * 100.0
+            m_idx = m_idx + 1
+            
         p_idx = p_idx + 1
 
 proc layout_part(part, view_width):
@@ -23,21 +46,31 @@ proc layout_part(part, view_width):
         m_idx = m_idx + 1
     
     # 2. Horizontal Justification (casting off)
-    # If total width < view_width, expand measures to fit
-    if total_content_width < view_width - 100.0:
+    # SEC-EH-17: Divide-by-zero risk fix
+    if total_content_width > 0.0 and total_content_width < view_width - 100.0:
         let scale = (view_width - 100.0) / total_content_width
         let j_idx = 0
         while j_idx < len(part.measures):
             part.measures[j_idx].width = part.measures[j_idx].width * scale
             j_idx = j_idx + 1
 
+# Calculate width of a single element based on its duration
+proc get_element_width(element):
+    # SMuFL spacing heuristic: base width + proportional duration
+    return 20.0 + (element.duration * 120.0)
+
 proc calculate_measure_content_width(measure):
-    # Simple heuristic: padding + (count of elements * constant)
+    # Improved heuristic: sum of element widths
     let max_voice_w = 0.0
     let v_idx = 0
     while v_idx < len(measure.voices):
         let voice = measure.voices[v_idx]
-        let voice_w = len(voice.elements) * 50.0 # 50 units per element
+        let voice_w = 0.0
+        let e_idx = 0
+        while e_idx < len(voice.elements):
+            voice_w = voice_w + get_element_width(voice.elements[e_idx])
+            e_idx = e_idx + 1
+            
         if voice_w > max_voice_w:
             max_voice_w = voice_w
         v_idx = v_idx + 1
@@ -61,7 +94,7 @@ proc pitch_to_y(clef, pitch):
         return 0.0
 
     let letter = pitch[0]
-    let step_idx = 0
+    let step_idx = -1
     if letter == "C" or letter == "c":
         step_idx = 0
     elif letter == "D" or letter == "d":
@@ -76,8 +109,14 @@ proc pitch_to_y(clef, pitch):
         step_idx = 5
     elif letter == "B" or letter == "b":
         step_idx = 6
+    
+    if step_idx == -1:
+        return 0.0
 
     let oct_char = pitch[len(pitch) - 1]
+    if oct_char < "0" or oct_char > "9":
+        return 0.0
+
     let octave = int(oct_char)
 
     let diatonic_val = octave * 7 + step_idx
@@ -136,25 +175,9 @@ proc y_to_pitch(clef, pos):
 
 # Calculate x, y coordinate position for a measure based on view mode
 proc get_measure_layout_pos(part_idx, m_idx, score, view_mode):
+    # This now uses cached values, addressing PERF-AC-5
     let res = {}
-    if view_mode == "scroll":
-        let y = 100.0 + part_idx * 200.0
-        let x = 270.0
-        let i = 0
-        while i < m_idx:
-            x = x + score.parts[part_idx].measures[i].width
-            i = i + 1
-        res["x"] = x
-        res["y"] = y
-    else: # "page"
-        let sys_idx = int(m_idx / 2) # 2 measures per system row
-        let local_m_idx = m_idx % 2
-        let y = 100.0 + sys_idx * 380.0 + part_idx * 100.0
-        let x = 270.0
-        let i = 0
-        while i < local_m_idx:
-            x = x + score.parts[part_idx].measures[sys_idx * 2 + i].width
-            i = i + 1
-        res["x"] = x
-        res["y"] = y
+    let measure = score.parts[part_idx].measures[m_idx]
+    res["x"] = measure.layout_x
+    res["y"] = measure.layout_y
     return res
