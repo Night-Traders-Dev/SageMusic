@@ -778,9 +778,11 @@ proc main():
         
         # Rendering Pass
         renderer.draw_score(frame_info, score, editor_ctx["view_mode"])
+        renderer.flush_batches(frame_info["cmd"]) # Flush manuscript
         
         # Draw UI on top
         renderer.draw_ui(frame_info["cmd"], ui_ctx)
+        renderer.flush_batches(frame_info["cmd"]) # Flush UI
         
         # Draw SMuFL icons on top of Simple Entry buttons for real Finale feel
         if editor_ctx["current_tool"] == "note_entry":
@@ -793,6 +795,7 @@ proc main():
             renderer.draw_glyph(cmd, "accidentalSharp", 145.0, 425.0, [1.0, 1.0, 1.0, 1.0])
             renderer.draw_glyph(cmd, "accidentalFlat", 35.0, 465.0, [1.0, 1.0, 1.0, 1.0])
             renderer.draw_glyph(cmd, "accidentalNatural", 145.0, 465.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.flush_batches(cmd)
         
         renderer.end_frame(frame_info)
 

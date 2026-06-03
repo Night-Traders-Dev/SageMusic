@@ -140,8 +140,12 @@ class MusicRenderer:
         # Pipeline for glyphs (texture mapped quads)
         self.glyph_pipeline = self.create_glyph_pipeline()
 
-        # Dynamic Resource Tracking for frames in flight
-        self.frame_resources = [[], []]
+        # SEC-RG-13: Dynamic Resource Tracking for frames in flight
+        self.frame_resources = []
+        let i = 0
+        while i < len(self.base["framebuffers"]):
+            push(self.frame_resources, [])
+            i = i + 1
         self.cf = 0
         
         # Batching buffers
@@ -345,20 +349,12 @@ class MusicRenderer:
             let pr = self.preview_info
             self.draw_note_preview(cmd, pr["x"], pr["y"], pr["duration"])
             
-        # Flush all batches
-        self.flush_batches(cmd)
+        # PERF: flush_batches removed from here, moved to main.sage to include UI
 
     proc flush_batches(self, cmd):
-        # 1. Flush Lines
-        if len(self.line_vertices) > 0:
-            let vbuf = gpu.upload_device_local(self.line_vertices, gpu.BUFFER_VERTEX)
-            push(self.frame_resources[self.cf], vbuf)
-            gpu.cmd_bind_graphics_pipeline(cmd, self.line_pipeline)
-            gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
-            gpu.cmd_bind_vertex_buffer(cmd, vbuf)
-            gpu.cmd_draw(cmd, len(self.line_vertices) / 8, 1, 0, 0)
-            
-        # 2. Flush Rects
+        # PERF: Reordered to ensure background (rects) are behind lines/glyphs
+        
+        # 1. Flush Rects
         if len(self.rect_vertices) > 0:
             let vbuf = gpu.upload_device_local(self.rect_vertices, gpu.BUFFER_VERTEX)
             push(self.frame_resources[self.cf], vbuf)
@@ -366,6 +362,17 @@ class MusicRenderer:
             gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
             gpu.cmd_bind_vertex_buffer(cmd, vbuf)
             gpu.cmd_draw(cmd, len(self.rect_vertices) / 8, 1, 0, 0)
+            self.rect_vertices = []
+            
+        # 2. Flush Lines
+        if len(self.line_vertices) > 0:
+            let vbuf = gpu.upload_device_local(self.line_vertices, gpu.BUFFER_VERTEX)
+            push(self.frame_resources[self.cf], vbuf)
+            gpu.cmd_bind_graphics_pipeline(cmd, self.line_pipeline)
+            gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+            gpu.cmd_draw(cmd, len(self.line_vertices) / 8, 1, 0, 0)
+            self.line_vertices = []
             
         # 3. Flush Glyphs
         if len(self.glyph_vertices) > 0:
@@ -376,6 +383,7 @@ class MusicRenderer:
             gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
             gpu.cmd_bind_vertex_buffer(cmd, vbuf)
             gpu.cmd_draw(cmd, len(self.glyph_vertices) / 8, 1, 0, 0)
+            self.glyph_vertices = []
             
         # 4. Flush Fonts
         if len(self.font_vertices) > 0:
@@ -386,6 +394,7 @@ class MusicRenderer:
             gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
             gpu.cmd_bind_vertex_buffer(cmd, vbuf)
             gpu.cmd_draw(cmd, len(self.font_vertices) / 8, 1, 0, 0)
+            self.font_vertices = []
 
     proc draw_part(self, cmd, part, part_idx, score, view_mode):
         let m_idx = 0
