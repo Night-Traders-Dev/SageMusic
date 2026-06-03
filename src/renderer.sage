@@ -153,8 +153,9 @@ class MusicRenderer:
         # 5. Load Compiled Shaders
         let vert_shader = gpu.load_shader("src/sprite.vert.spv", gpu.STAGE_VERTEX)
         let frag_shader = gpu.load_shader("src/sprite.frag.spv", gpu.STAGE_FRAGMENT)
-        if vert_shader < 0 or frag_shader < 0:
-            raise "Failed to load sprite shaders"
+        let font_frag_shader = gpu.load_shader("src/font.frag.spv", gpu.STAGE_FRAGMENT)
+        if vert_shader < 0 or frag_shader < 0 or font_frag_shader < 0:
+            raise "Failed to load sprite or font shaders"
         
         # 6. Graphics Pipeline Setup
         let s_vb = {}
@@ -197,6 +198,13 @@ class MusicRenderer:
         let pipeline = gpu.create_graphics_pipeline(s_cfg)
         if pipeline < 0:
             raise "Failed to create glyph pipeline"
+            
+        # Create font pipeline
+        s_cfg["fragment_shader"] = font_frag_shader
+        self.font_pipeline = gpu.create_graphics_pipeline(s_cfg)
+        if self.font_pipeline < 0:
+            raise "Failed to create font pipeline"
+            
         return pipeline
 
     proc begin_frame(self):
@@ -492,7 +500,7 @@ class MusicRenderer:
         let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
         push(self.frame_resources[self.cf], vbuf)
         
-        gpu.cmd_bind_graphics_pipeline(cmd, self.glyph_pipeline)
+        gpu.cmd_bind_graphics_pipeline(cmd, self.font_pipeline)
         gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.font_desc_set, 0)
         gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
         gpu.cmd_bind_vertex_buffer(cmd, vbuf)
