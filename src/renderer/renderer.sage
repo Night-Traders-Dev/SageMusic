@@ -8,7 +8,27 @@ import io
 import json
 import graphics.math3d as math3d
 import graphics.renderer as base_renderer
-from graphics.mesh import mesh_vertex_binding, mesh_vertex_attribs
+from graphics.mesh import mesh_vertex_binding
+
+proc sprite_vertex_attribs():
+    let a0 = {}
+    a0["location"] = 0
+    a0["binding"] = 0
+    a0["format"] = gpu.ATTR_VEC2
+    a0["offset"] = 0
+    
+    let a1 = {}
+    a1["location"] = 1
+    a1["binding"] = 0
+    a1["format"] = gpu.ATTR_VEC2
+    a1["offset"] = 8
+    
+    let a2 = {}
+    a2["location"] = 2
+    a2["binding"] = 0
+    a2["format"] = gpu.ATTR_VEC4
+    a2["offset"] = 16
+    return [a0, a1, a2]
 from layout.layout import pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP
 
 # ============================================================================
@@ -52,27 +72,31 @@ class MusicRenderer:
         # 3. Pipelines
         self.pipe_layout = gpu.create_pipeline_layout([], 64, gpu.STAGE_VERTEX)
         
+        # Sprite/Glyph Pipeline Layout
+        let b0 = {"binding": 0, "type": gpu.DESC_COMBINED_SAMPLER, "stage": gpu.STAGE_FRAGMENT, "count": 1}
+        self.sprite_desc_layout = gpu.create_descriptor_layout([b0])
+        self.sprite_pipe_layout = gpu.create_pipeline_layout([self.sprite_desc_layout], 64, gpu.STAGE_VERTEX)
+        
         # Line Pipeline
         let line_cfg = {}
-        line_cfg["layout"] = self.pipe_layout
+        line_cfg["layout"] = self.sprite_pipe_layout
         line_cfg["render_pass"] = self.base["render_pass"]
         line_cfg["vertex_shader"] = vert
         line_cfg["fragment_shader"] = frag
         line_cfg["topology"] = gpu.TOPO_LINE_LIST
+        line_cfg["cull_mode"] = gpu.CULL_NONE
+        line_cfg["front_face"] = gpu.FRONT_CCW
+        line_cfg["depth_test"] = false
+        line_cfg["depth_write"] = false
         line_cfg["blend"] = true
         line_cfg["vertex_bindings"] = [mesh_vertex_binding()]
-        line_cfg["vertex_attribs"] = mesh_vertex_attribs()
+        line_cfg["vertex_attribs"] = sprite_vertex_attribs()
         self.line_pipeline = gpu.create_graphics_pipeline(line_cfg)
         
         # Rect Pipeline
         line_cfg["topology"] = gpu.TOPO_TRIANGLE_LIST
         self.rect_pipeline = gpu.create_graphics_pipeline(line_cfg)
 
-        # Sprite/Glyph Pipeline Layout
-        let b0 = {"binding": 0, "type": gpu.DESC_COMBINED_SAMPLER, "stage": gpu.STAGE_FRAGMENT, "count": 1}
-        self.sprite_desc_layout = gpu.create_descriptor_layout([b0])
-        self.sprite_pipe_layout = gpu.create_pipeline_layout([self.sprite_desc_layout], 64, gpu.STAGE_VERTEX)
-        
         let ps = {"type": gpu.DESC_COMBINED_SAMPLER, "count": 10} # Pool for several sets
         self.sprite_desc_pool = gpu.create_descriptor_pool(10, [ps])
         
@@ -83,9 +107,13 @@ class MusicRenderer:
         s_cfg["vertex_shader"] = vert
         s_cfg["fragment_shader"] = frag
         s_cfg["topology"] = gpu.TOPO_TRIANGLE_LIST
+        s_cfg["cull_mode"] = gpu.CULL_NONE
+        s_cfg["front_face"] = gpu.FRONT_CCW
+        s_cfg["depth_test"] = false
+        s_cfg["depth_write"] = false
         s_cfg["blend"] = true
         s_cfg["vertex_bindings"] = [mesh_vertex_binding()]
-        s_cfg["vertex_attribs"] = mesh_vertex_attribs()
+        s_cfg["vertex_attribs"] = sprite_vertex_attribs()
         self.glyph_pipeline = gpu.create_graphics_pipeline(s_cfg)
         
         # Font Pipeline
@@ -123,6 +151,17 @@ class MusicRenderer:
         self.batch_rects = []
         self.batch_glyphs = []
         self.batch_fonts = []
+        
+        # 7. Safe solid UV for lines and rects
+        self.solid_u = 0.0
+        self.solid_v = 0.0
+        if self.atlas_data != nil:
+            let glyphs = self.atlas_data["glyphs"]
+            if glyphs != nil:
+                let g = glyphs["noteheadBlack"]
+                if g != nil:
+                    self.solid_u = (g["x"] + g["w"]/2.0) / self.atlas_data["texture_width"]
+                    self.solid_v = (g["y"] + g["h"]/2.0) / self.atlas_data["texture_height"]
 
     proc begin_frame(self):
         let frame_info = base_renderer.begin_frame(self.base)
@@ -138,6 +177,15 @@ class MusicRenderer:
 
     proc end_frame(self, frame_info):
         base_renderer.end_frame(self.base, frame_info)
+
+    proc recreate_swapchain(self):
+        base_renderer.recreate_swapchain(self.base)
+        self.frame_resources = []
+        let i = 0
+        while i < len(self.base["framebuffers"]):
+            push(self.frame_resources, [])
+            i = i + 1
+        self.cf = 0
 
     proc draw_score(self, frame_info, score, view_mode):
         let cmd = frame_info["cmd"]
@@ -192,7 +240,8 @@ class MusicRenderer:
             let vbuf = gpu.upload_device_local(self.batch_rects, gpu.BUFFER_VERTEX)
             push(self.frame_resources[self.cf], vbuf)
             gpu.cmd_bind_graphics_pipeline(cmd, self.rect_pipeline)
-            gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set, 0)
+            gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
             gpu.cmd_bind_vertex_buffer(cmd, vbuf)
             gpu.cmd_draw(cmd, len(self.batch_rects) / 8, 1, 0, 0)
             self.batch_rects = []
@@ -202,7 +251,8 @@ class MusicRenderer:
             let vbuf = gpu.upload_device_local(self.batch_lines, gpu.BUFFER_VERTEX)
             push(self.frame_resources[self.cf], vbuf)
             gpu.cmd_bind_graphics_pipeline(cmd, self.line_pipeline)
-            gpu.cmd_push_constants(cmd, self.pipe_layout, gpu.STAGE_VERTEX, self.proj)
+            gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set, 0)
+            gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
             gpu.cmd_bind_vertex_buffer(cmd, vbuf)
             gpu.cmd_draw(cmd, len(self.batch_lines) / 8, 1, 0, 0)
             self.batch_lines = []
@@ -329,79 +379,82 @@ class MusicRenderer:
     proc add_line(self, x1, y1, x2, y2, c):
         push(self.batch_lines, x1)
         push(self.batch_lines, y1)
-        push(self.batch_lines, 0.0)
+        push(self.batch_lines, self.solid_u)
+        push(self.batch_lines, self.solid_v)
         push(self.batch_lines, c[0])
         push(self.batch_lines, c[1])
         push(self.batch_lines, c[2])
-        push(self.batch_lines, 0.0)
-        push(self.batch_lines, 0.0)
+        push(self.batch_lines, c[3])
         
         push(self.batch_lines, x2)
         push(self.batch_lines, y2)
-        push(self.batch_lines, 0.0)
+        push(self.batch_lines, self.solid_u)
+        push(self.batch_lines, self.solid_v)
         push(self.batch_lines, c[0])
         push(self.batch_lines, c[1])
         push(self.batch_lines, c[2])
-        push(self.batch_lines, 0.0)
-        push(self.batch_lines, 0.0)
+        push(self.batch_lines, c[3])
 
     proc add_rect(self, x, y, w, h, c):
         let r=c[0]
         let g=c[1]
         let b=c[2]
+        let a=c[3]
+        let su = self.solid_u
+        let sv = self.solid_v
         push(self.batch_rects, x)
         push(self.batch_rects, y)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, su)
+        push(self.batch_rects, sv)
         push(self.batch_rects, r)
         push(self.batch_rects, g)
         push(self.batch_rects, b)
-        push(self.batch_rects, 0.0)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, a)
         
         push(self.batch_rects, x)
         push(self.batch_rects, y+h)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, su)
+        push(self.batch_rects, sv)
         push(self.batch_rects, r)
         push(self.batch_rects, g)
         push(self.batch_rects, b)
-        push(self.batch_rects, 0.0)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, a)
         
         push(self.batch_rects, x+w)
         push(self.batch_rects, y+h)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, su)
+        push(self.batch_rects, sv)
         push(self.batch_rects, r)
         push(self.batch_rects, g)
         push(self.batch_rects, b)
-        push(self.batch_rects, 0.0)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, a)
         
         push(self.batch_rects, x)
         push(self.batch_rects, y)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, su)
+        push(self.batch_rects, sv)
         push(self.batch_rects, r)
         push(self.batch_rects, g)
         push(self.batch_rects, b)
-        push(self.batch_rects, 0.0)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, a)
         
         push(self.batch_rects, x+w)
         push(self.batch_rects, y+h)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, su)
+        push(self.batch_rects, sv)
         push(self.batch_rects, r)
         push(self.batch_rects, g)
         push(self.batch_rects, b)
-        push(self.batch_rects, 0.0)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, a)
         
         push(self.batch_rects, x+w)
         push(self.batch_rects, y)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, su)
+        push(self.batch_rects, sv)
         push(self.batch_rects, r)
         push(self.batch_rects, g)
         push(self.batch_rects, b)
-        push(self.batch_rects, 0.0)
-        push(self.batch_rects, 0.0)
+        push(self.batch_rects, a)
 
     proc add_glyph(self, name, x, y, color):
         if self.atlas_data == nil: return
