@@ -227,10 +227,7 @@ class MusicRenderer:
 
     proc recreate_swapchain(self):
         gpu.device_wait_idle()
-        let ok = gpu.recreate_swapchain()
-        if ok == false:
-            return false
-
+        
         let r = self.base
         let i = 0
         while i < len(r["framebuffers"]):
@@ -238,6 +235,10 @@ class MusicRenderer:
             i = i + 1
 
         gpu.destroy_image(r["depth_image"])
+
+        let ok = gpu.recreate_swapchain()
+        if ok == false:
+            return false
 
         let ext = gpu.swapchain_extent()
         let w = ext["width"]
