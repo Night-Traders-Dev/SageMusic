@@ -198,7 +198,10 @@ proc main():
     while true:
         let frame_info = renderer.begin_frame()
         if frame_info == nil:
-            break
+            if gpu.window_should_close():
+                break
+            renderer.recreate_swapchain()
+            continue
             
         # UI Pass - Start
         ui.ui_begin_frame(ui_ctx)
@@ -238,7 +241,7 @@ proc main():
             editor_ctx["selected_duration"] = 0.0625
 
         # Draw Main Sidebar
-        ui.ui_draw_rect(ui_ctx, 0, 0, 250, 720, [0.12, 0.12, 0.14, 1.0])
+        ui.ui_draw_rect(ui_ctx, 0, 0, 250, renderer.base["height"], [0.12, 0.12, 0.14, 1.0])
         ui.ui_label(ui_ctx, 20, 20, "SageMusic v1.0")
         
         # Tools palette

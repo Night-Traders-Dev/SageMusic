@@ -225,6 +225,35 @@ class MusicRenderer:
     proc end_frame(self, frame_info):
         base_renderer.end_frame(self.base, frame_info)
 
+    proc recreate_swapchain(self):
+        gpu.device_wait_idle()
+        let ok = gpu.recreate_swapchain()
+        if ok == false:
+            return false
+
+        let r = self.base
+        let i = 0
+        while i < len(r["framebuffers"]):
+            gpu.destroy_framebuffer(r["framebuffers"][i])
+            i = i + 1
+
+        gpu.destroy_image(r["depth_image"])
+
+        let ext = gpu.swapchain_extent()
+        let w = ext["width"]
+        let h = ext["height"]
+        r["width"] = w
+        r["height"] = h
+
+        let depth = gpu.create_depth_buffer(w, h)
+        r["depth_image"] = depth
+
+        let framebuffers = gpu.create_swapchain_framebuffers_depth(r["render_pass"], depth)
+        r["framebuffers"] = framebuffers
+
+        self.proj = math3d.mat4_ortho(0, w, 0, h, -1, 1)
+        return true
+
     proc draw_score(self, frame_info, score):
         self.cf = frame_info["current_frame"]
         let cmd = frame_info["cmd"]
