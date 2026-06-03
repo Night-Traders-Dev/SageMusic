@@ -4,6 +4,7 @@
 # -----------------------------------------
 
 import gpu
+import sys
 import graphics.ui as ui
 import graphics.renderer as base_renderer
 
@@ -200,6 +201,8 @@ proc main():
         if frame_info == nil:
             if gpu.window_should_close():
                 break
+            sys.sleep(0.01)
+            gpu.poll_events()
             renderer.recreate_swapchain()
             continue
             
