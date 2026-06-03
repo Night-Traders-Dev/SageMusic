@@ -11,7 +11,7 @@ import graphics.renderer as base_renderer
 # Local imports
 from model.model import create_empty_score, Note, Rest, Measure, Score, Part
 from renderer.renderer import MusicRenderer
-from layout.layout import layout_score, y_to_pitch, pitch_to_y
+from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos
 from command.command import CommandHistory, AddElementCommand, DeleteElementCommand
 
 # Helper to remove element at index
@@ -64,15 +64,16 @@ proc clear_hovered_delete(score):
         p_idx = p_idx + 1
 
 # Helper to find which measure boundaries enclose the mouse coordinate
-proc find_hovered_measure(score, mx, my):
-    let cur_y = 100.0
+proc find_hovered_measure(score, mx, my, view_mode):
     let part_idx = 0
     while part_idx < len(score.parts):
         let part = score.parts[part_idx]
-        let cur_x = 270.0
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
+            let pos = get_measure_layout_pos(part_idx, m_idx, score, view_mode)
+            let cur_x = pos["x"]
+            let cur_y = pos["y"]
             if mx >= cur_x and mx <= cur_x + measure.width:
                 if my >= cur_y - 40.0 and my <= cur_y + 32.0 + 40.0:
                     let res = {}
@@ -81,22 +82,21 @@ proc find_hovered_measure(score, mx, my):
                     res["measure_x"] = cur_x
                     res["measure_y"] = cur_y
                     return res
-            cur_x = cur_x + measure.width
             m_idx = m_idx + 1
-        cur_y = cur_y + 200.0
         part_idx = part_idx + 1
     return nil
 
 # Helper to find which note/rest the mouse coordinates lie within a small radius of
-proc find_hovered_note(score, mx, my):
-    let cur_y = 100.0
+proc find_hovered_note(score, mx, my, view_mode):
     let part_idx = 0
     while part_idx < len(score.parts):
         let part = score.parts[part_idx]
-        let cur_x = 270.0
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
+            let pos = get_measure_layout_pos(part_idx, m_idx, score, view_mode)
+            let cur_x = pos["x"]
+            let cur_y = pos["y"]
             let v_idx = 0
             while v_idx < len(measure.voices):
                 let voice = measure.voices[v_idx]
@@ -138,9 +138,7 @@ proc find_hovered_note(score, mx, my):
                     elem_x = elem_x + 50.0
                     e_idx = e_idx + 1
                 v_idx = v_idx + 1
-            cur_x = cur_x + measure.width
             m_idx = m_idx + 1
-        cur_y = cur_y + 200.0
         part_idx = part_idx + 1
     return nil
 
@@ -167,7 +165,7 @@ proc main():
     let bass_part = Part("Bass Staff")
     
     let i = 0
-    while i < 2:
+    while i < 4:
         let m_treble = Measure()
         m_treble.clef = "treble"
         treble_part.add_measure(m_treble)
@@ -222,15 +220,33 @@ proc main():
     let v2_2 = score.parts[2].measures[1].get_voice(0)
     v2_2.add_element(Rest(1.0))
 
+    # Default rests for Measure 3 and 4
+    score.parts[0].measures[2].get_voice(0).add_element(Rest(1.0))
+    score.parts[0].measures[3].get_voice(0).add_element(Rest(1.0))
+    score.parts[1].measures[2].get_voice(0).add_element(Rest(1.0))
+    score.parts[1].measures[3].get_voice(0).add_element(Rest(1.0))
+    score.parts[2].measures[2].get_voice(0).add_element(Rest(1.0))
+    score.parts[2].measures[3].get_voice(0).add_element(Rest(1.0))
+
     # Editor State Context
     let editor_ctx = {}
     editor_ctx["current_tool"] = "note_entry"
     editor_ctx["selected_duration"] = 0.25
+    editor_ctx["selected_accidental"] = nil
     editor_ctx["selected_element"] = nil
     editor_ctx["selected_element_info"] = nil
+    editor_ctx["view_mode"] = "page"
+    editor_ctx["active_menu"] = nil
+    editor_ctx["modal_active"] = nil
+    editor_ctx["modal_measure_info"] = nil
+    
+    let should_exit = false
 
     # 4. Main Loop
     while true:
+        if should_exit:
+            break
+            
         let frame_info = renderer.begin_frame()
         if frame_info == nil:
             if gpu.window_should_close():
@@ -277,90 +293,318 @@ proc main():
         elif gpu.key_just_pressed(gpu.KEY_5):
             editor_ctx["selected_duration"] = 0.0625
 
-        # Draw Main Sidebar
-        ui.ui_draw_rect(ui_ctx, 0, 0, 250, renderer.base["height"], [0.12, 0.12, 0.14, 1.0])
-        ui.ui_label(ui_ctx, 20, 20, "SageMusic v1.0")
+        # A. TOP MENU BAR (Finale Style)
+        ui.ui_draw_rect(ui_ctx, 0, 0, renderer.base["width"], 40, [0.93, 0.93, 0.93, 1.0])
+        ui.ui_draw_rect(ui_ctx, 0, 39, renderer.base["width"], 1, [0.7, 0.7, 0.7, 1.0])
         
-        # Tools palette
-        ui.ui_label(ui_ctx, 20, 60, "Tool Palette")
+        if ui.ui_button(ui_ctx, 10, 5, 55, 30, "File"):
+            if editor_ctx["active_menu"] == "file":
+                editor_ctx["active_menu"] = nil
+            else:
+                editor_ctx["active_menu"] = "file"
+                
+        if ui.ui_button(ui_ctx, 70, 5, 55, 30, "Edit"):
+            if editor_ctx["active_menu"] == "edit":
+                editor_ctx["active_menu"] = nil
+            else:
+                editor_ctx["active_menu"] = "edit"
+
+        if ui.ui_button(ui_ctx, 130, 5, 55, 30, "View"):
+            if editor_ctx["active_menu"] == "view":
+                editor_ctx["active_menu"] = nil
+            else:
+                editor_ctx["active_menu"] = "view"
+
+        if ui.ui_button(ui_ctx, 190, 5, 80, 30, "Playback"):
+            if editor_ctx["active_menu"] == "playback":
+                editor_ctx["active_menu"] = nil
+            else:
+                editor_ctx["active_menu"] = "playback"
+
+        if ui.ui_button(ui_ctx, 275, 5, 55, 30, "Help"):
+            if editor_ctx["active_menu"] == "help":
+                editor_ctx["active_menu"] = nil
+            else:
+                editor_ctx["active_menu"] = "help"
+
+        # B. MENU DROPDOWN LISTS
+        if editor_ctx["active_menu"] == "file":
+            ui.ui_draw_rect(ui_ctx, 10, 40, 150, 70, [0.96, 0.96, 0.96, 1.0])
+            if ui.ui_button(ui_ctx, 15, 45, 140, 25, "New Score"):
+                # Clear all voices
+                let p = 0
+                while p < len(score.parts):
+                    let m = 0
+                    while m < len(score.parts[p].measures):
+                        score.parts[p].measures[m].voices[0].elements = []
+                        m = m + 1
+                    p = p + 1
+                editor_ctx["active_menu"] = nil
+            if ui.ui_button(ui_ctx, 15, 75, 140, 25, "Exit"):
+                should_exit = true
+                editor_ctx["active_menu"] = nil
+                
+        elif editor_ctx["active_menu"] == "edit":
+            ui.ui_draw_rect(ui_ctx, 70, 40, 150, 70, [0.96, 0.96, 0.96, 1.0])
+            if ui.ui_button(ui_ctx, 75, 45, 140, 25, "Undo"):
+                history.undo()
+                clear_selection(score)
+                editor_ctx["selected_element"] = nil
+                editor_ctx["active_menu"] = nil
+            if ui.ui_button(ui_ctx, 75, 75, 140, 25, "Redo"):
+                history.redo()
+                clear_selection(score)
+                editor_ctx["selected_element"] = nil
+                editor_ctx["active_menu"] = nil
+                
+        elif editor_ctx["active_menu"] == "view":
+            ui.ui_draw_rect(ui_ctx, 130, 40, 150, 70, [0.96, 0.96, 0.96, 1.0])
+            let page_lbl = "Page View"
+            if editor_ctx["view_mode"] == "page":
+                page_lbl = "[Page View]"
+            if ui.ui_button(ui_ctx, 135, 45, 140, 25, page_lbl):
+                editor_ctx["view_mode"] = "page"
+                editor_ctx["active_menu"] = nil
+                
+            let scroll_lbl = "Scroll View"
+            if editor_ctx["view_mode"] == "scroll":
+                scroll_lbl = "[Scroll View]"
+            if ui.ui_button(ui_ctx, 135, 75, 140, 25, scroll_lbl):
+                editor_ctx["view_mode"] = "scroll"
+                editor_ctx["active_menu"] = nil
+                
+        elif editor_ctx["active_menu"] == "playback":
+            ui.ui_draw_rect(ui_ctx, 190, 40, 150, 70, [0.96, 0.96, 0.96, 1.0])
+            if ui.ui_button(ui_ctx, 195, 45, 140, 25, "Play"):
+                print "Playing score..."
+                editor_ctx["active_menu"] = nil
+            if ui.ui_button(ui_ctx, 195, 75, 140, 25, "Stop"):
+                print "Playback stopped."
+                editor_ctx["active_menu"] = nil
+                
+        elif editor_ctx["active_menu"] == "help":
+            ui.ui_draw_rect(ui_ctx, 275, 40, 180, 40, [0.96, 0.96, 0.96, 1.0])
+            if ui.ui_button(ui_ctx, 280, 45, 170, 30, "About Finale Clone"):
+                print "SageMusic - MakeMusic Finale Clone v1.0"
+                editor_ctx["active_menu"] = nil
+
+        # C. MAIN SIDEBAR (Tool Grid)
+        ui.ui_draw_rect(ui_ctx, 0, 40, 250, renderer.base["height"] - 40, [0.12, 0.12, 0.14, 1.0])
+        ui.ui_label(ui_ctx, 20, 60, "Finale Main Palette")
+        
         let tool_y = 80
         
-        let select_label = "Select Tool"
+        # Grid Row 0
+        let sel_btn = "Select"
         if editor_ctx["current_tool"] == "select":
-            select_label = "[Select Tool]"
-        if ui.ui_button(ui_ctx, 20, tool_y, 210, 30, select_label):
+            sel_btn = "[Select]"
+        if ui.ui_button(ui_ctx, 20, tool_y, 100, 35, sel_btn):
             editor_ctx["current_tool"] = "select"
             clear_selection(score)
             editor_ctx["selected_element"] = nil
             
-        let note_label = "Note Entry Tool"
+        let entry_btn = "Simple"
         if editor_ctx["current_tool"] == "note_entry":
-            note_label = "[Note Entry Tool]"
-        if ui.ui_button(ui_ctx, 20, tool_y + 40, 210, 30, note_label):
+            entry_btn = "[Simple]"
+        if ui.ui_button(ui_ctx, 130, tool_y, 100, 35, entry_btn):
             editor_ctx["current_tool"] = "note_entry"
             clear_selection(score)
             editor_ctx["selected_element"] = nil
             
-        let eraser_label = "Eraser Tool"
+        # Grid Row 1
+        let erase_btn = "Eraser"
         if editor_ctx["current_tool"] == "eraser":
-            eraser_label = "[Eraser Tool]"
-        if ui.ui_button(ui_ctx, 20, tool_y + 80, 210, 30, eraser_label):
+            erase_btn = "[Eraser]"
+        if ui.ui_button(ui_ctx, 20, tool_y + 45, 100, 35, erase_btn):
             editor_ctx["current_tool"] = "eraser"
             clear_selection(score)
             editor_ctx["selected_element"] = nil
             
-        # Undo/Redo buttons
-        if ui.ui_button(ui_ctx, 20, tool_y + 120, 100, 30, "Undo"):
+        let clef_btn = "Clef Tool"
+        if editor_ctx["current_tool"] == "clef":
+            clef_btn = "[Clef]"
+        if ui.ui_button(ui_ctx, 130, tool_y + 45, 100, 35, clef_btn):
+            editor_ctx["current_tool"] = "clef"
+            clear_selection(score)
+            editor_ctx["selected_element"] = nil
+            
+        # Grid Row 2
+        let key_btn = "Key Sig"
+        if editor_ctx["current_tool"] == "key_signature":
+            key_btn = "[Key Sig]"
+        if ui.ui_button(ui_ctx, 20, tool_y + 90, 100, 35, key_btn):
+            editor_ctx["current_tool"] = "key_signature"
+            clear_selection(score)
+            editor_ctx["selected_element"] = nil
+            
+        let time_btn = "Time Sig"
+        if editor_ctx["current_tool"] == "time_signature":
+            time_btn = "[Time Sig]"
+        if ui.ui_button(ui_ctx, 130, tool_y + 90, 100, 35, time_btn):
+            editor_ctx["current_tool"] = "time_signature"
+            clear_selection(score)
+            editor_ctx["selected_element"] = nil
+
+        # Grid Row 3 (Playback)
+        if ui.ui_button(ui_ctx, 20, tool_y + 135, 100, 35, "Play"):
+            print "Playing..."
+        if ui.ui_button(ui_ctx, 130, tool_y + 135, 100, 35, "Stop"):
+            print "Stopped."
+
+        # Grid Row 4 (Undo/Redo)
+        if ui.ui_button(ui_ctx, 20, tool_y + 180, 100, 35, "Undo"):
             history.undo()
             clear_selection(score)
             editor_ctx["selected_element"] = nil
-        if ui.ui_button(ui_ctx, 130, tool_y + 120, 100, 30, "Redo"):
+        if ui.ui_button(ui_ctx, 130, tool_y + 180, 100, 35, "Redo"):
             history.redo()
             clear_selection(score)
             editor_ctx["selected_element"] = nil
-            
-        # Duration selection panel
-        ui.ui_label(ui_ctx, 20, 250, "Duration Palette")
-        let dur_y = 270
-        
-        let d_1_0_label = "Whole (1.0)"
-        if editor_ctx["selected_duration"] == 1.0:
-            d_1_0_label = "[Whole (1.0)]"
-        if ui.ui_button(ui_ctx, 20, dur_y, 210, 30, d_1_0_label):
-            editor_ctx["selected_duration"] = 1.0
-            
-        let d_0_5_label = "Half (0.5)"
-        if editor_ctx["selected_duration"] == 0.5:
-            d_0_5_label = "[Half (0.5)]"
-        if ui.ui_button(ui_ctx, 20, dur_y + 40, 210, 30, d_0_5_label):
-            editor_ctx["selected_duration"] = 0.5
-            
-        let d_0_25_label = "Quarter (0.25)"
-        if editor_ctx["selected_duration"] == 0.25:
-            d_0_25_label = "[Quarter (0.25)]"
-        if ui.ui_button(ui_ctx, 20, dur_y + 80, 210, 30, d_0_25_label):
-            editor_ctx["selected_duration"] = 0.25
-            
-        let d_0_125_label = "Eighth (0.125)"
-        if editor_ctx["selected_duration"] == 0.125:
-            d_0_125_label = "[Eighth (0.125)]"
-        if ui.ui_button(ui_ctx, 20, dur_y + 120, 210, 30, d_0_125_label):
-            editor_ctx["selected_duration"] = 0.125
-            
-        let d_0_0625_label = "Sixteenth (0.0625)"
-        if editor_ctx["selected_duration"] == 0.0625:
-            d_0_0625_label = "[Sixteenth (0.0625)]"
-        if ui.ui_button(ui_ctx, 20, dur_y + 160, 210, 30, d_0_0625_label):
-            editor_ctx["selected_duration"] = 0.0625
 
-        ui.ui_label(ui_ctx, 20, 490, "Shortcuts:")
-        ui.ui_label(ui_ctx, 20, 510, "S: Select Tool")
-        ui.ui_label(ui_ctx, 20, 530, "N: Note Entry")
-        ui.ui_label(ui_ctx, 20, 550, "E: Eraser Tool")
-        ui.ui_label(ui_ctx, 20, 570, "1-5: Select Durations")
-        ui.ui_label(ui_ctx, 20, 590, "Del/Bksp: Delete Note")
-        ui.ui_label(ui_ctx, 20, 610, "Ctrl+Z/Y: Undo/Redo")
-        
+        # D. SIMPLE ENTRY PALETTE (Visible during note entry)
+        if editor_ctx["current_tool"] == "note_entry":
+            ui.ui_label(ui_ctx, 20, 310, "Simple Entry Palette")
+            let dur_y = 330
+            
+            # Row 0
+            let wh_lbl = "   Whole"
+            if editor_ctx["selected_duration"] == 1.0:
+                wh_lbl = "   [Whole]"
+            if ui.ui_button(ui_ctx, 20, dur_y, 100, 30, wh_lbl):
+                editor_ctx["selected_duration"] = 1.0
+                
+            let hf_lbl = "   Half"
+            if editor_ctx["selected_duration"] == 0.5:
+                hf_lbl = "   [Half]"
+            if ui.ui_button(ui_ctx, 130, dur_y, 100, 30, hf_lbl):
+                editor_ctx["selected_duration"] = 0.5
+                
+            # Row 1
+            let qt_lbl = "   Quarter"
+            if editor_ctx["selected_duration"] == 0.25:
+                qt_lbl = "   [Quart.]"
+            if ui.ui_button(ui_ctx, 20, dur_y + 40, 100, 30, qt_lbl):
+                editor_ctx["selected_duration"] = 0.25
+                
+            let ei_lbl = "   Eighth"
+            if editor_ctx["selected_duration"] == 0.125:
+                ei_lbl = "   [Eighth]"
+            if ui.ui_button(ui_ctx, 130, dur_y + 40, 100, 30, ei_lbl):
+                editor_ctx["selected_duration"] = 0.125
+                
+            # Row 2
+            let sx_lbl = "   16th"
+            if editor_ctx["selected_duration"] == 0.0625:
+                sx_lbl = "   [16th]"
+            if ui.ui_button(ui_ctx, 20, dur_y + 80, 100, 30, sx_lbl):
+                editor_ctx["selected_duration"] = 0.0625
+                
+            let shp_lbl = "   Sharp"
+            if editor_ctx["selected_accidental"] == "sharp":
+                shp_lbl = "   [Sharp]"
+            if ui.ui_button(ui_ctx, 130, dur_y + 80, 100, 30, shp_lbl):
+                if editor_ctx["selected_accidental"] == "sharp":
+                    editor_ctx["selected_accidental"] = nil
+                else:
+                    editor_ctx["selected_accidental"] = "sharp"
+                    
+            # Row 3
+            let flt_lbl = "   Flat"
+            if editor_ctx["selected_accidental"] == "flat":
+                flt_lbl = "   [Flat]"
+            if ui.ui_button(ui_ctx, 20, dur_y + 120, 100, 30, flt_lbl):
+                if editor_ctx["selected_accidental"] == "flat":
+                    editor_ctx["selected_accidental"] = nil
+                else:
+                    editor_ctx["selected_accidental"] = "flat"
+                    
+            let nat_lbl = "   Natural"
+            if editor_ctx["selected_accidental"] == "natural":
+                nat_lbl = "   [Nat.]"
+            if ui.ui_button(ui_ctx, 130, dur_y + 120, 100, 30, nat_lbl):
+                if editor_ctx["selected_accidental"] == "natural":
+                    editor_ctx["selected_accidental"] = nil
+                else:
+                    editor_ctx["selected_accidental"] = "natural"
+
+        ui.ui_label(ui_ctx, 20, 520, "Shortcuts:")
+        ui.ui_label(ui_ctx, 20, 540, "S: Select Tool")
+        ui.ui_label(ui_ctx, 20, 560, "N: Note Entry")
+        ui.ui_label(ui_ctx, 20, 580, "E: Eraser Tool")
+        ui.ui_label(ui_ctx, 20, 600, "1-5: Select Durations")
+        ui.ui_label(ui_ctx, 20, 620, "Del/Bksp: Delete Note")
+        ui.ui_label(ui_ctx, 20, 640, "Ctrl+Z/Y: Undo/Redo")
+
+        # E. INTERACTIVE DIALOG MODALS
+        if editor_ctx["modal_active"] == "time_signature":
+            let m_info = editor_ctx["modal_measure_info"]
+            let target_measure = score.parts[m_info["part_idx"]].measures[m_info["measure_idx"]]
+            
+            ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
+            ui.ui_label(ui_ctx, 460, 230, "Select Time Signature")
+            
+            if ui.ui_button(ui_ctx, 480, 275, 140, 35, "4/4 Time"):
+                target_measure.time_signature = (4, 4)
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 630, 275, 140, 35, "3/4 Time"):
+                target_measure.time_signature = (3, 4)
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 480, 325, 140, 35, "2/4 Time"):
+                target_measure.time_signature = (2, 4)
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 630, 325, 140, 35, "6/8 Time"):
+                target_measure.time_signature = (6, 8)
+                editor_ctx["modal_active"] = nil
+                
+            if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
+                editor_ctx["modal_active"] = nil
+                
+        elif editor_ctx["modal_active"] == "key_signature":
+            let m_info = editor_ctx["modal_measure_info"]
+            let target_measure = score.parts[m_info["part_idx"]].measures[m_info["measure_idx"]]
+            
+            ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
+            ui.ui_label(ui_ctx, 460, 230, "Select Key Signature")
+            
+            if ui.ui_button(ui_ctx, 480, 275, 140, 35, "C Major"):
+                target_measure.key_signature = "C Major"
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 630, 275, 140, 35, "G Major (1#)"):
+                target_measure.key_signature = "G Major"
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 480, 325, 140, 35, "F Major (1b)"):
+                target_measure.key_signature = "F Major"
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 630, 325, 140, 35, "D Major (2#)"):
+                target_measure.key_signature = "D Major"
+                editor_ctx["modal_active"] = nil
+                
+            if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
+                editor_ctx["modal_active"] = nil
+                
+        elif editor_ctx["modal_active"] == "clef":
+            let m_info = editor_ctx["modal_measure_info"]
+            let target_measure = score.parts[m_info["part_idx"]].measures[m_info["measure_idx"]]
+            
+            ui.ui_draw_rect(ui_ctx, 440, 210, 400, 300, [0.15, 0.15, 0.18, 0.95])
+            ui.ui_label(ui_ctx, 460, 230, "Select Staff Clef")
+            
+            if ui.ui_button(ui_ctx, 480, 275, 140, 35, "Treble Clef"):
+                target_measure.clef = "treble"
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 630, 275, 140, 35, "Bass Clef"):
+                target_measure.clef = "bass"
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 480, 325, 140, 35, "Alto Clef"):
+                target_measure.clef = "alto"
+                editor_ctx["modal_active"] = nil
+            if ui.ui_button(ui_ctx, 630, 325, 140, 35, "Tenor Clef"):
+                target_measure.clef = "tenor"
+                editor_ctx["modal_active"] = nil
+                
+            if ui.ui_button(ui_ctx, 540, 440, 200, 35, "Cancel"):
+                editor_ctx["modal_active"] = nil
+
         # UI Pass - End
         ui.ui_end_frame(ui_ctx)
         
@@ -368,16 +612,16 @@ proc main():
         clear_hovered_delete(score)
         let mx = ui_ctx["mouse_x"]
         let my = ui_ctx["mouse_y"]
-        let is_over_score = mx > 250
+        let is_over_score = mx > 250 and my > 40 # Account for sidebar and top menu bar
         
-        let hovered = find_hovered_measure(score, mx, my)
+        let hovered = find_hovered_measure(score, mx, my, editor_ctx["view_mode"])
         
-        if is_over_score and hovered != nil:
+        if is_over_score and hovered != nil and editor_ctx["modal_active"] == nil:
             let part = score.parts[hovered["part_idx"]]
             let measure = part.measures[hovered["measure_idx"]]
             let voice = measure.get_voice(0)
             
-            # Note Entry
+            # Note Entry Tool
             if editor_ctx["current_tool"] == "note_entry":
                 let pos = int((hovered["measure_y"] + 32.0 - my + 2.0) / 4.0)
                 let pitch = y_to_pitch(measure.clef, pos)
@@ -390,13 +634,17 @@ proc main():
                 renderer.preview_info = preview
                 
                 if ui_ctx["mouse_clicked"]:
-                    history.execute(AddElementCommand(voice, Note(pitch, editor_ctx["selected_duration"])))
+                    let new_note = Note(pitch, editor_ctx["selected_duration"])
+                    if editor_ctx["selected_accidental"] != nil:
+                        new_note.accidental = editor_ctx["selected_accidental"]
+                        editor_ctx["selected_accidental"] = nil # Reset accidental after applying
+                    history.execute(AddElementCommand(voice, new_note))
             else:
                 renderer.preview_info = nil
                 
-            # Eraser
+            # Eraser Tool
             if editor_ctx["current_tool"] == "eraser":
-                let note_hover = find_hovered_note(score, mx, my)
+                let note_hover = find_hovered_note(score, mx, my, editor_ctx["view_mode"])
                 if note_hover != nil:
                     let target_measure = score.parts[note_hover["part_idx"]].measures[note_hover["measure_idx"]]
                     let target_voice = target_measure.voices[note_hover["voice_idx"]]
@@ -406,9 +654,9 @@ proc main():
                     if ui_ctx["mouse_clicked"]:
                         history.execute(DeleteElementCommand(target_voice, target_elem))
                         
-            # Select
+            # Select Tool
             if editor_ctx["current_tool"] == "select":
-                let note_hover = find_hovered_note(score, mx, my)
+                let note_hover = find_hovered_note(score, mx, my, editor_ctx["view_mode"])
                 if ui_ctx["mouse_clicked"]:
                     clear_selection(score)
                     editor_ctx["selected_element"] = nil
@@ -419,6 +667,24 @@ proc main():
                         target_elem.selected = true
                         editor_ctx["selected_element"] = target_elem
                         editor_ctx["selected_element_info"] = note_hover
+                        
+            # Clef Tool (Click to trigger Clef dialog modal)
+            if editor_ctx["current_tool"] == "clef":
+                if ui_ctx["mouse_clicked"]:
+                    editor_ctx["modal_active"] = "clef"
+                    editor_ctx["modal_measure_info"] = hovered
+                    
+            # Key Signature Tool (Click to trigger Key Signature dialog modal)
+            if editor_ctx["current_tool"] == "key_signature":
+                if ui_ctx["mouse_clicked"]:
+                    editor_ctx["modal_active"] = "key_signature"
+                    editor_ctx["modal_measure_info"] = hovered
+
+            # Time Signature Tool (Click to trigger Time Signature dialog modal)
+            if editor_ctx["current_tool"] == "time_signature":
+                if ui_ctx["mouse_clicked"]:
+                    editor_ctx["modal_active"] = "time_signature"
+                    editor_ctx["modal_measure_info"] = hovered
         else:
             renderer.preview_info = nil
             
@@ -436,10 +702,22 @@ proc main():
         layout_score(score, renderer.base["width"] - 290.0) # score width minus sidebar and padding
         
         # Rendering Pass
-        renderer.draw_score(frame_info, score)
+        renderer.draw_score(frame_info, score, editor_ctx["view_mode"])
         
         # Draw UI on top
         renderer.draw_ui(frame_info["cmd"], ui_ctx)
+        
+        # Draw SMuFL icons on top of Simple Entry buttons for real Finale feel
+        if editor_ctx["current_tool"] == "note_entry":
+            let cmd = frame_info["cmd"]
+            renderer.draw_glyph(cmd, "noteheadWhole", 35.0, 345.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "noteheadHalf", 145.0, 345.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "noteheadBlack", 35.0, 385.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "noteheadBlack", 145.0, 385.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "noteheadBlack", 35.0, 425.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "accidentalSharp", 145.0, 425.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "accidentalFlat", 35.0, 465.0, [1.0, 1.0, 1.0, 1.0])
+            renderer.draw_glyph(cmd, "accidentalNatural", 145.0, 465.0, [1.0, 1.0, 1.0, 1.0])
         
         renderer.end_frame(frame_info)
 

@@ -9,7 +9,7 @@ import json
 import graphics.math3d as math3d
 import graphics.renderer as base_renderer
 from graphics.mesh import mesh_vertex_binding, mesh_vertex_attribs
-from layout.layout import pitch_to_y
+from layout.layout import pitch_to_y, get_measure_layout_pos
 
 # ============================================================================
 # Glyph Mapping (SMuFL snippets)
@@ -255,7 +255,7 @@ class MusicRenderer:
         self.proj = math3d.mat4_ortho(0, w, 0, h, -1, 1)
         return true
 
-    proc draw_score(self, frame_info, score):
+    proc draw_score(self, frame_info, score, view_mode):
         self.cf = frame_info["current_frame"]
         let cmd = frame_info["cmd"]
         
@@ -263,25 +263,22 @@ class MusicRenderer:
         self.draw_rect(cmd, 250.0, 0.0, self.base["width"] - 250.0, self.base["height"], [0.98, 0.98, 0.96, 1.0])
         
         # Iterate through parts, systems, and measures
-        let cur_y = 100.0
         let part_idx = 0
         while part_idx < len(score.parts):
             let part = score.parts[part_idx]
-            self.draw_part(cmd, part, cur_y)
-            cur_y = cur_y + 200.0 # Vertical system spacing
+            self.draw_part(cmd, part, part_idx, score, view_mode)
             part_idx = part_idx + 1
 
         if self.preview_info != nil:
             let pr = self.preview_info
             self.draw_note_preview(cmd, pr["x"], pr["y"], pr["duration"])
 
-    proc draw_part(self, cmd, part, y):
-        let cur_x = 270.0
+    proc draw_part(self, cmd, part, part_idx, score, view_mode):
         let m_idx = 0
         while m_idx < len(part.measures):
             let measure = part.measures[m_idx]
-            self.draw_measure(cmd, measure, cur_x, y)
-            cur_x = cur_x + measure.width
+            let pos = get_measure_layout_pos(part_idx, m_idx, score, view_mode)
+            self.draw_measure(cmd, measure, pos["x"], pos["y"])
             m_idx = m_idx + 1
 
     proc draw_measure(self, cmd, measure, x, y):
@@ -318,6 +315,32 @@ class MusicRenderer:
                 
             self.draw_glyph(cmd, clef_glyph, x + 15.0, clef_y, [0.0, 0.0, 0.0, 1.0])
 
+            # 2.2 Draw Key Signature
+            let key_sig = measure.key_signature
+            let num_accidentals = 0
+            if key_sig == "G Major":
+                num_accidentals = 1
+                self.draw_glyph(cmd, "accidentalSharp", x + 42.0, y + 24.0, [0.0, 0.0, 0.0, 1.0])
+            elif key_sig == "F Major":
+                num_accidentals = 1
+                self.draw_glyph(cmd, "accidentalFlat", x + 42.0, y + 16.0, [0.0, 0.0, 0.0, 1.0])
+            elif key_sig == "D Major":
+                num_accidentals = 2
+                self.draw_glyph(cmd, "accidentalSharp", x + 42.0, y + 24.0, [0.0, 0.0, 0.0, 1.0])
+                self.draw_glyph(cmd, "accidentalSharp", x + 50.0, y + 12.0, [0.0, 0.0, 0.0, 1.0])
+
+            # 2.3 Draw Time Signature
+            let ts_x = x + 42.0
+            if num_accidentals == 1:
+                ts_x = x + 55.0
+            elif num_accidentals == 2:
+                ts_x = x + 65.0
+
+            let ts_top = str(measure.time_signature[0])
+            let ts_bot = str(measure.time_signature[1])
+            self.draw_text(cmd, ts_top, ts_x, y + 22.0, [0.0, 0.0, 0.0, 1.0])
+            self.draw_text(cmd, ts_bot, ts_x, y + 10.0, [0.0, 0.0, 0.0, 1.0])
+
         # 3. Draw Elements in voices
         let v_idx = 0
         while v_idx < len(measure.voices):
@@ -328,7 +351,7 @@ class MusicRenderer:
     proc draw_voice(self, cmd, voice, x, y, clef, draw_clef):
         let cur_x = x + 20.0
         if draw_clef:
-            cur_x = x + 65.0 # Padding for clef
+            cur_x = x + 90.0 # Padding for clef + key sig + time sig
         let e_idx = 0
         while e_idx < len(voice.elements):
             let element = voice.elements[e_idx]

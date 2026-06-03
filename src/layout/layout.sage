@@ -50,7 +50,7 @@ proc calculate_measure_content_width(measure):
 
     let extra_w = 35.0
     if draw_clef:
-        extra_w = 80.0
+        extra_w = 110.0
     return max_voice_w + extra_w
 
 # Pitch to Y-coordinate mapping
@@ -133,3 +133,28 @@ proc y_to_pitch(clef, pos):
         letter = "B"
         
     return letter + str(octave)
+
+# Calculate x, y coordinate position for a measure based on view mode
+proc get_measure_layout_pos(part_idx, m_idx, score, view_mode):
+    let res = {}
+    if view_mode == "scroll":
+        let y = 100.0 + part_idx * 200.0
+        let x = 270.0
+        let i = 0
+        while i < m_idx:
+            x = x + score.parts[part_idx].measures[i].width
+            i = i + 1
+        res["x"] = x
+        res["y"] = y
+    else: # "page"
+        let sys_idx = int(m_idx / 2) # 2 measures per system row
+        let local_m_idx = m_idx % 2
+        let y = 100.0 + sys_idx * 380.0 + part_idx * 100.0
+        let x = 270.0
+        let i = 0
+        while i < local_m_idx:
+            x = x + score.parts[part_idx].measures[sys_idx * 2 + i].width
+            i = i + 1
+        res["x"] = x
+        res["y"] = y
+    return res
