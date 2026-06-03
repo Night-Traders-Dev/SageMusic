@@ -121,11 +121,11 @@ class MusicRenderer:
         b0["count"] = 1
         self.sprite_desc_layout = gpu.create_descriptor_layout([b0])
         
-        # 2. Create Descriptor Pool
+        # 2. Create Descriptor Pool for 2 descriptor sets
         let ps = {}
         ps["type"] = gpu.DESC_COMBINED_SAMPLER
-        ps["count"] = 1
-        self.sprite_desc_pool = gpu.create_descriptor_pool(1, [ps])
+        ps["count"] = 2
+        self.sprite_desc_pool = gpu.create_descriptor_pool(2, [ps])
         self.sprite_desc_set = gpu.allocate_descriptor_set(self.sprite_desc_pool, self.sprite_desc_layout)
         
         # 3. Load Sprite Texture & Sampler
@@ -133,6 +133,20 @@ class MusicRenderer:
         self.sprite_sampler = gpu.create_sampler(gpu.FILTER_LINEAR, gpu.FILTER_LINEAR, gpu.ADDRESS_CLAMP_EDGE)
         gpu.update_descriptor_image(self.sprite_desc_set, 0, self.sprite_texture, self.sprite_sampler)
         
+        # 3.1 Load UI Font (Lato)
+        if io.exists("assets/lato.ttf"):
+            self.ui_font = gpu.load_font("assets/lato.ttf", 16)
+            let f_atlas = gpu.font_atlas(self.ui_font)
+            let f_tex = gpu.load_texture(f_atlas["path"])
+            let f_smp = gpu.create_sampler(gpu.FILTER_LINEAR, gpu.FILTER_LINEAR, gpu.ADDRESS_CLAMP_EDGE)
+            gpu.font_set_atlas(self.ui_font, f_tex, f_smp)
+            
+            self.font_desc_set = gpu.allocate_descriptor_set(self.sprite_desc_pool, self.sprite_desc_layout)
+            gpu.update_descriptor_image(self.font_desc_set, 0, f_tex, f_smp)
+        else:
+            self.ui_font = nil
+            self.font_desc_set = -1
+            
         # 4. Pipeline Layout (64-byte projection matrix + 1 descriptor set)
         self.sprite_pipe_layout = gpu.create_pipeline_layout([self.sprite_desc_layout], 64, gpu.STAGE_VERTEX)
         
@@ -460,12 +474,29 @@ class MusicRenderer:
         let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
         push(self.frame_resources[self.cf], vbuf)
         
-        # 5. Draw sprite using graphics pipeline
+        # 5. Draw sprite using graphics pipeline (passing 0 for VK_PIPELINE_BIND_POINT_GRAPHICS)
         gpu.cmd_bind_graphics_pipeline(cmd, self.glyph_pipeline)
-        gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set)
+        gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.sprite_desc_set, 0)
         gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
         gpu.cmd_bind_vertex_buffer(cmd, vbuf)
         gpu.cmd_draw(cmd, 6, 1, 0, 0)
+
+    proc draw_text(self, cmd, text, x, y, color):
+        if self.ui_font == nil or self.font_desc_set < 0:
+            return
+        
+        let vertices = gpu.font_text_verts(self.ui_font, text, x, y, color[0], color[1], color[2], color[3])
+        if len(vertices) == 0:
+            return
+            
+        let vbuf = gpu.upload_device_local(vertices, gpu.BUFFER_VERTEX)
+        push(self.frame_resources[self.cf], vbuf)
+        
+        gpu.cmd_bind_graphics_pipeline(cmd, self.glyph_pipeline)
+        gpu.cmd_bind_descriptor_set(cmd, self.sprite_pipe_layout, 0, self.font_desc_set, 0)
+        gpu.cmd_push_constants(cmd, self.sprite_pipe_layout, gpu.STAGE_VERTEX, self.proj)
+        gpu.cmd_bind_vertex_buffer(cmd, vbuf)
+        gpu.cmd_draw(cmd, len(vertices) / 8, 1, 0, 0)
 
     proc draw_ui(self, cmd, ui_ctx):
         let dl = ui_ctx["draw_list"]
@@ -474,6 +505,8 @@ class MusicRenderer:
             let c = dl[i]
             if c["type"] == "rect":
                 self.draw_rect(cmd, c["x"], c["y"], c["w"], c["h"], c["color"])
+            elif c["type"] == "text":
+                self.draw_text(cmd, c["text"], c["x"], c["y"], c["color"])
             i = i + 1
 
     proc draw_line(self, cmd, x1, y1, x2, y2, color):
