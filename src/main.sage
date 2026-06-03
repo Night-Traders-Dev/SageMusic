@@ -26,12 +26,39 @@ proc main():
     # 3. Initialize Data Model
     let score = create_empty_score("Untitled Symphony")
     
-    # Add some demo notes
-    let v = score.parts[0].measures[0].get_voice(0)
-    v.add_element(Note("C4", 0.25))
-    v.add_element(Note("E4", 0.25))
-    v.add_element(Note("G4", 0.25))
-    v.add_element(Rest(0.25))
+    # Add some demo notes to Measure 1 (Treble Clef)
+    let v1 = score.parts[0].measures[0].get_voice(0)
+    v1.add_element(Note("C4", 0.25))
+    v1.add_element(Note("E4", 0.25))
+    v1.add_element(Note("G4", 0.25))
+    v1.add_element(Rest(0.25))
+
+    # Measure 2 (Bass Clef)
+    let m2 = score.parts[0].measures[1]
+    m2.clef = "bass"
+    let v2 = m2.get_voice(0)
+    v2.add_element(Note("G2", 0.25))
+    v2.add_element(Note("B2", 0.25))
+    v2.add_element(Note("D3", 0.25))
+    v2.add_element(Note("F#3", 0.25))
+
+    # Measure 3 (Alto Clef)
+    let m3 = score.parts[0].measures[2]
+    m3.clef = "alto"
+    let v3 = m3.get_voice(0)
+    v3.add_element(Note("F3", 0.25))
+    v3.add_element(Note("C4", 0.25))
+    v3.add_element(Note("E4", 0.25))
+    v3.add_element(Note("G4", 0.25))
+
+    # Measure 4 (Treble Clef - Ledger lines & Flats)
+    let m4 = score.parts[0].measures[3]
+    m4.clef = "treble"
+    let v4 = m4.get_voice(0)
+    v4.add_element(Note("A3", 0.25)) # Ledger line below
+    v4.add_element(Note("C4", 0.25)) # Ledger line below
+    v4.add_element(Note("Bb4", 0.25)) # Flat accidental
+    v4.add_element(Note("A5", 0.25)) # Ledger line above
 
     # 4. Main Loop
     while true:

@@ -48,7 +48,40 @@ proc calculate_measure_content_width(measure):
 # clef: "treble", "bass", etc.
 # pitch: "C4", "D4", etc.
 proc pitch_to_y(clef, pitch):
-    # Map staff positions (0 = bottom line, 1 = first space, etc.)
-    let pos = 0
-    # ... mapping logic ...
+    if len(pitch) < 2:
+        return 0.0
+
+    let letter = pitch[0]
+    let step_idx = 0
+    if letter == "C" or letter == "c":
+        step_idx = 0
+    elif letter == "D" or letter == "d":
+        step_idx = 1
+    elif letter == "E" or letter == "e":
+        step_idx = 2
+    elif letter == "F" or letter == "f":
+        step_idx = 3
+    elif letter == "G" or letter == "g":
+        step_idx = 4
+    elif letter == "A" or letter == "a":
+        step_idx = 5
+    elif letter == "B" or letter == "b":
+        step_idx = 6
+
+    let oct_char = pitch[len(pitch) - 1]
+    let octave = int(oct_char)
+
+    let diatonic_val = octave * 7 + step_idx
+
+    let ref_val = 30 # default Treble Clef
+    if clef == "treble":
+        ref_val = 30
+    elif clef == "bass":
+        ref_val = 18
+    elif clef == "alto":
+        ref_val = 24
+    elif clef == "tenor":
+        ref_val = 22
+
+    let pos = diatonic_val - ref_val
     return pos * 4.0 # 4 pixels per staff step
