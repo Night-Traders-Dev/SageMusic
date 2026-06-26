@@ -95,9 +95,9 @@ Enabling data exchange with other music software.
 - [ ] Implement **MusicXML** import/export to share scores with MuseScore, Finale, and Sibelius.
 
 ### 5.3 Audio Playback
-- [ ] Integrate a basic MIDI synthesizer or waveform generator.
-- [ ] Map note pitches and durations to playback events.
-- [ ] Implement a play/pause/stop transport control UI.
+- [x] Integrate a basic MIDI synthesizer or waveform generator.
+- [x] Map note pitches and durations to playback events.
+- [x] Implement a play/pause/stop transport control UI.
 
 ---
 

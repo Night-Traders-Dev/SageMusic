@@ -8,67 +8,6 @@ let STAFF_LINE_GAP = 8.0
 let STAFF_HEIGHT = 32.0
 let STAFF_STEP = 4.0
 
-proc layout_score(score, view_width, view_mode):
-    # Iterate through all parts and calculate measure sizes
-    let p_idx = 0
-    while p_idx < len(score.parts):
-        let part = score.parts[p_idx]
-        
-        # PERF-AC-6: Only layout part if it's dirty
-        if part.dirty:
-            layout_part(part, view_width)
-            
-            # 3. Calculate and cache absolute positions based on view_mode
-            # This addresses PERF-AC-5 by moving summation to the layout pass
-            let cur_x = 270.0
-            let m_idx = 0
-            while m_idx < len(part.measures):
-                let measure = part.measures[m_idx]
-                if view_mode == "scroll":
-                    measure.layout_x = cur_x
-                    measure.layout_y = 100.0 + p_idx * 200.0
-                    cur_x = cur_x + measure.width
-                else: # "page"
-                    let sys_idx = int(m_idx / 2)
-                    let local_m_idx = m_idx % 2
-                    
-                    let px = 270.0
-                    if local_m_idx == 1:
-                        px = 270.0 + part.measures[sys_idx * 2].width
-                    
-                    measure.layout_x = px
-                    measure.layout_y = 100.0 + sys_idx * 380.0 + p_idx * 100.0
-                m_idx = m_idx + 1
-            
-            part.dirty = false
-            
-        p_idx = p_idx + 1
-
-proc layout_part(part, view_width):
-    # 1. Calculate ideal width for each measure based on content
-    let total_content_width = 0.0
-    let m_idx = 0
-    while m_idx < len(part.measures):
-        let measure = part.measures[m_idx]
-        
-        # PERF-AC-6: Only recalculate measure content if dirty
-        if measure.dirty:
-            let content_w = calculate_measure_content_width(measure)
-            measure.width = content_w
-            measure.dirty = false
-            
-        total_content_width = total_content_width + measure.width
-        m_idx = m_idx + 1
-    
-    # 2. Horizontal Justification (casting off)
-    # SEC-EH-17: Divide-by-zero risk fix
-    if total_content_width > 0.0 and total_content_width < view_width - 100.0:
-        let scale = (view_width - 100.0) / total_content_width
-        let j_idx = 0
-        while j_idx < len(part.measures):
-            part.measures[j_idx].width = part.measures[j_idx].width * scale
-            j_idx = j_idx + 1
-
 # Calculate width of a single element based on its duration
 proc get_element_width(element):
     # SMuFL spacing heuristic: base width + proportional duration
@@ -100,6 +39,70 @@ proc calculate_measure_content_width(measure):
     if draw_clef:
         extra_w = 110.0
     return max_voice_w + extra_w
+
+proc layout_part(part, view_width):
+    # 1. Calculate ideal width for each measure based on content
+    let total_content_width = 0.0
+    let m_idx = 0
+    while m_idx < len(part.measures):
+        let measure = part.measures[m_idx]
+        
+        # PERF-AC-6: Only recalculate measure content if dirty
+        if measure.dirty:
+            let content_w = calculate_measure_content_width(measure)
+            measure.width = content_w
+            measure.dirty = false
+            
+        total_content_width = total_content_width + measure.width
+        m_idx = m_idx + 1
+    
+    # 2. Horizontal Justification (casting off)
+    # SEC-EH-17: Divide-by-zero risk fix
+    if total_content_width > 0.0 and total_content_width < view_width - 100.0:
+        let scale = (view_width - 100.0) / total_content_width
+        let j_idx = 0
+        while j_idx < len(part.measures):
+            part.measures[j_idx].width = part.measures[j_idx].width * scale
+            j_idx = j_idx + 1
+
+proc layout_score(score, view_width, view_mode):
+    # Iterate through all parts and calculate measure sizes
+    let p_idx = 0
+    while p_idx < len(score.parts):
+        let part = score.parts[p_idx]
+        
+        # PERF-AC-6: Only layout part if it's dirty
+        if part.dirty:
+            layout_part(part, view_width)
+            
+            # 3. Calculate and cache absolute positions based on view_mode
+            # This addresses PERF-AC-5 by moving summation to the layout pass
+            let cur_x = 270.0
+            let m_idx = 0
+            while m_idx < len(part.measures):
+                let measure = part.measures[m_idx]
+                if view_mode == "scroll":
+                    measure.layout_x = cur_x
+                    measure.layout_y = 100.0 + p_idx * 160.0
+                    cur_x = cur_x + measure.width
+                else: # "page"
+                    let sys_idx = int(m_idx / 2)
+                    let local_m_idx = m_idx % 2
+                    
+                    let px = 270.0
+                    if local_m_idx == 1:
+                        px = 270.0 + part.measures[sys_idx * 2].width
+                    
+                    let part_spacing = 160.0
+                    let sys_height = (len(score.parts) * part_spacing) + 120.0
+                    
+                    measure.layout_x = px
+                    measure.layout_y = 100.0 + sys_idx * sys_height + p_idx * part_spacing
+                m_idx = m_idx + 1
+            
+            part.dirty = false
+            
+        p_idx = p_idx + 1
 
 # Pitch to Y-coordinate mapping
 # clef: "treble", "bass", etc.
@@ -136,15 +139,15 @@ proc pitch_to_y(clef, pitch):
 
     let diatonic_val = octave * 7 + step_idx
 
-    let ref_val = 30 # default Treble Clef
+    let ref_val = 38 # default Treble Clef
     if clef == "treble":
-        ref_val = 30
+        ref_val = 38
     elif clef == "bass":
-        ref_val = 18
+        ref_val = 26
     elif clef == "alto":
-        ref_val = 24
+        ref_val = 32
     elif clef == "tenor":
-        ref_val = 22
+        ref_val = 30
 
     let pos = diatonic_val - ref_val
     return pos * STAFF_STEP # 4 pixels per staff step

@@ -50,7 +50,7 @@ class Note(MusicElement):
 
     proc set_dynamics(self, dynamic_level):
         let valid_dynamics = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
-        if array_contains(valid_dynamics, dynamic_level):
+        if contains(valid_dynamics, dynamic_level):
             self.dynamics = dynamic_level
             # Map to MIDI velocity
             if dynamic_level == "ppp":
@@ -72,12 +72,12 @@ class Note(MusicElement):
     
     proc set_articulation(self, articulation_type):
         let valid_articulations = ["staccato", "accent", "tenuto", "marcato", "staccatissimo", "fermata"]
-        if array_contains(valid_articulations, articulation_type):
+        if contains(valid_articulations, articulation_type):
             self.articulation = articulation_type
     
     proc set_technique(self, technique_type):
         let valid_techniques = ["pizzicato", "tremolo", "trill", "glissando", "harmonics", "mute"]
-        if array_contains(valid_techniques, technique_type):
+        if contains(valid_techniques, technique_type):
             self.technique = technique_type
 
     proc __str__(self):
@@ -110,7 +110,8 @@ class Voice(MusicElement):
 class Measure(MusicElement):
     proc init(self):
         super.init()
-        self.voices = [Voice()]
+        let v = Voice()
+        self.voices = [v]
         self.time_signature = (4, 4)
         self.ts_top_str = "4" # SEC-MA-17: Cached string
         self.ts_bot_str = "4" # SEC-MA-17: Cached string

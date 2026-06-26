@@ -8,7 +8,12 @@ import io
 import json
 import graphics.math3d as math3d
 import graphics.renderer as base_renderer
-from graphics.mesh import mesh_vertex_binding
+proc mesh_vertex_binding():
+    let b = {}
+    b["binding"] = 0
+    b["stride"] = 32
+    b["rate"] = gpu.INPUT_RATE_VERTEX
+    return b
 
 proc sprite_vertex_attribs():
     let a0 = {}
@@ -29,7 +34,7 @@ proc sprite_vertex_attribs():
     a2["format"] = gpu.ATTR_VEC4
     a2["offset"] = 16
     return [a0, a1, a2]
-from layout.layout import pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP
+from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP, calculate_measure_content_width, layout_part
 
 # ============================================================================
 # Render Context
@@ -222,6 +227,9 @@ class MusicRenderer:
         let part_idx = 0
         while part_idx < len(score.parts):
             let part = score.parts[part_idx]
+            if len(part.measures) > 0:
+                let first_m = part.measures[0]
+                self.add_text(part.name, first_m.layout_x - 120.0, first_m.layout_y + 20.0, [0.0, 0.0, 0.0, 1.0])
             let m_idx = 0
             while m_idx < len(part.measures):
                 let measure = part.measures[m_idx]
@@ -317,9 +325,37 @@ class MusicRenderer:
                 draw_clef = false
 
         if draw_clef:
-            self.add_glyph(measure.clef + "Clef", x + 15.0, y + 24.0, [0.0, 0.0, 0.0, 1.0])
-            self.add_text(measure.ts_top_str, x + 42.0, y + 22.0, [0.0, 0.0, 0.0, 1.0])
-            self.add_text(measure.ts_bot_str, x + 42.0, y + 10.0, [0.0, 0.0, 0.0, 1.0])
+            let clef_glyph = ""
+            if measure.clef == "treble": clef_glyph = "gClef"
+            elif measure.clef == "bass": clef_glyph = "fClef"
+            elif measure.clef == "alto" or measure.clef == "tenor": clef_glyph = "cClef"
+            
+            if clef_glyph != "":
+                self.add_glyph(clef_glyph, x + 15.0, y + 24.0, [0.0, 0.0, 0.0, 1.0])
+                
+            let key_x = x + 42.0
+            
+            # 1 sharp
+            if measure.key_signature == "G Major" or measure.key_signature == "E minor":
+                self.add_glyph("accidentalSharp", key_x, y + 4.0, [0.0, 0.0, 0.0, 1.0])
+                key_x = key_x + 12.0
+            # 2 sharps
+            elif measure.key_signature == "D Major" or measure.key_signature == "B minor":
+                self.add_glyph("accidentalSharp", key_x, y + 4.0, [0.0, 0.0, 0.0, 1.0])
+                self.add_glyph("accidentalSharp", key_x + 10.0, y + 16.0, [0.0, 0.0, 0.0, 1.0])
+                key_x = key_x + 22.0
+            # 1 flat
+            elif measure.key_signature == "F Major" or measure.key_signature == "D minor":
+                self.add_glyph("accidentalFlat", key_x, y + 16.0, [0.0, 0.0, 0.0, 1.0])
+                key_x = key_x + 12.0
+            # 2 flats
+            elif measure.key_signature == "Bb Major" or measure.key_signature == "G minor":
+                self.add_glyph("accidentalFlat", key_x, y + 16.0, [0.0, 0.0, 0.0, 1.0])
+                self.add_glyph("accidentalFlat", key_x + 10.0, y + 4.0, [0.0, 0.0, 0.0, 1.0])
+                key_x = key_x + 22.0
+                
+            self.add_text(measure.ts_top_str, key_x, y + 10.0, [0.0, 0.0, 0.0, 1.0])
+            self.add_text(measure.ts_bot_str, key_x, y + 24.0, [0.0, 0.0, 0.0, 1.0])
 
         let v_idx = 0
         while v_idx < len(measure.voices):
@@ -497,36 +533,29 @@ class MusicRenderer:
         let v1 = (g["y"]+g["h"])/th
         let px = x
         let py = y
-        let pw = g["w"]
-        let ph = g["h"]
+        let pw = g["w"] / 2.0
+        let ph = g["h"] / 2.0
         if name == "noteheadWhole" or name == "noteheadHalf" or name == "noteheadBlack":
             px = x-pw/2.0
             py = y-ph/2.0
-        elif name == "gClef": py = y-76.0
-        elif name == "fClef": py = y-24.0
-        elif name == "cClef": py = y-33.0
+        elif name == "gClef": py = y-38.0
+        elif name == "fClef": py = y-12.0
+        elif name == "cClef": py = y-16.5
         elif name == "accidentalSharp":
-            px = x-18.0
-            py = y-22.0
+            px = x-9.0
+            py = y-11.0
         elif name == "accidentalFlat":
-            px = x-17.0
-            py = y-28.0
+            px = x-8.5
+            py = y-14.0
         elif name == "accidentalNatural":
-            px = x-14.0
-            py = y-22.0
-        elif name == "restWhole": px = x-pw/2.0
-        elif name == "restHalf":
-            px = x-pw/2.0
-            py = y-ph
-        elif name == "restQuarter":
+            px = x-8.5
+            py = y-11.5
+        elif name == "restWhole" or name == "restHalf":
             px = x-pw/2.0
             py = y-ph/2.0
-        elif name == "restEighth":
+        elif name == "restQuarter" or name == "restEighth" or name == "restSixteenth":
             px = x-pw/2.0
-            py = y-10.0
-        elif name == "restSixteenth":
-            px = x-pw/2.0
-            py = y-18.0
+            py = y-ph/2.0
         let r=color[0]
         let g_v=color[1]
         let b=color[2]

@@ -1,6 +1,7 @@
 # SageLang compiler build folders
 sagelang_build/
 build_sage/
+assets/wiz/
 
 # Build utilities
 glslangValidator
@@ -14,3 +15,12 @@ glslangValidator
 .idea/
 *.swp
 *~
+
+# Build artifacts and deps
+out.c
+sagemusic
+sagemusic.c
+deps/
+assets/sfz/
+.blackboxcli/
+src/layout/layout

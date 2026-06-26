@@ -5,16 +5,19 @@
 
 import gpu
 import sys
+import io
+import strings
 import graphics.ui as ui
 import graphics.renderer as base_renderer
 
 # Local imports
-from model.model import create_empty_score, Note, Rest, Measure, Score, Part
-from renderer.renderer import MusicRenderer
-from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP
+from model.model import create_empty_score, Note, Rest, Measure, Score, Part, Voice, MusicElement
+from renderer.renderer import MusicRenderer, mesh_vertex_binding, sprite_vertex_attribs
+from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP, calculate_measure_content_width, layout_part
 from command.command import CommandHistory, AddElementCommand, DeleteElementCommand
 from ui.editor_ui import process_editor_ui
 from utils.helpers import get_safe_part, get_safe_measure, get_safe_voice, get_safe_element, find_hovered_measure, find_hovered_note
+from audio.engine import AudioEngine
 
 
 proc main():
@@ -52,16 +55,30 @@ proc main():
 
     # Editor State Context
     let editor_ctx = {}
+    
+    let audio = AudioEngine()
+    audio.start()
+    editor_ctx["audio"] = audio
+    
     editor_ctx["current_tool"] = "note_entry"
     editor_ctx["selected_duration"] = 0.25
     editor_ctx["selected_accidental"] = nil
     editor_ctx["selected_element"] = nil
+    editor_ctx["wiz_ensemble"] = "Create New Ensemble"
+    editor_ctx["wiz_style"] = "Engraved Style"
+    editor_ctx["wiz_cat"] = "Woodwinds"
+    editor_ctx["wiz_inst"] = "Flute"
+    editor_ctx["wiz_ts"] = "4/4"
+    editor_ctx["wiz_key"] = "C Major"
+    editor_ctx["wiz_key_mode"] = "Major"
+    editor_ctx["wiz_selected_insts"] = []
+    editor_ctx["wiz_sel_added"] = ""
     editor_ctx["selected_element_info"] = nil
     editor_ctx["last_mouse_x"] = 0.0
     editor_ctx["last_mouse_y"] = 0.0
     editor_ctx["view_mode"] = "page"
     editor_ctx["active_menu"] = nil
-    editor_ctx["modal_active"] = nil
+    editor_ctx["modal_active"] = "startup_wizard_1"
     editor_ctx["modal_measure_info"] = nil
     
     let should_exit = false

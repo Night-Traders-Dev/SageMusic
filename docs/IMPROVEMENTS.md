@@ -26,25 +26,21 @@
 ## 🎵 New Innovative Features
 
 ### 1. Realistic Audio Playback Engine
-**Location:** `src/audio/audio.sage`
+**Location:** `src/audio/engine.sage`, `src/audio/engine_ffi.c`
 **Features:**
-- Advanced ADSR envelope synthesis
-- Multiple instrument simulations:
-  - **Piano**: Rich harmonic content with percussive attack
-  - **Violin**: Sustained tone with realistic vibrato
-  - **Flute**: Pure tone with breath noise
-  - **Trumpet**: Bright harmonic series
-- Pitch-to-frequency conversion (A4 = 440Hz standard)
-- Sample rate: 44.1kHz professional quality
-- Configurable harmonic overtones per instrument
+- Native C-FFI integration with `miniaudio` and `sfizz` for professional sample-playback
+- Multi-track sample-accurate MIDI sequencer supporting up to 16 channels
+- Automatic `.sfz` instrument mapping based on staff name (Brass, Woodwinds, Strings, etc.)
+- Pitch-to-MIDI note conversion with accidental support
+- Sample rate: 48kHz high quality, 256 frames per block
 
 **Usage:**
 ```sage
-import audio.audio as audio
-let playback = audio.create_audio_engine()
-playback.set_instrument("violin")
-playback.play_note("C4", 1.0)
-playback.play_score(score)
+from audio.engine import AudioEngine
+let playback = AudioEngine()
+playback.start()
+playback.load_instrument(0, "assets/sfz/VSCO2/Woodwinds/Flute/Flute-sus-stac.sfz")
+playback.note_on(0, 0, 60, 100) # delay, channel, pitch, velocity
 ```
 
 ### 2. Professional MIDI Integration

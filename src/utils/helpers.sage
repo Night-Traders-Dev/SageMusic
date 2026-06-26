@@ -1,14 +1,6 @@
-from layout.layout import STAFF_HEIGHT, get_element_width, pitch_to_y
+from layout.layout import layout_score, y_to_pitch, pitch_to_y, get_measure_layout_pos, get_element_width, STAFF_LINE_GAP, STAFF_HEIGHT, STAFF_STEP, calculate_measure_content_width, layout_part
 
-# Helper to remove element at index
-proc remove_at(lst, idx):
-    let new_list = []
-    let i = 0
-    while i < len(lst):
-        if i != idx:
-            push(new_list, lst[i])
-        i = i + 1
-    return new_list
+
 
 # Safe access helpers
 proc get_safe_part(score, p_idx):
