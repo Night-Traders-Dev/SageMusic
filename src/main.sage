@@ -197,6 +197,7 @@ proc main():
         # Layout Pass (only if dirty)
         if score.dirty:
             layout_score(score, renderer.base["width"] - 290.0, editor_ctx["view_mode"]) # score width minus sidebar and padding
+            score.rebuild_element_cache() # Rebuild flat element list for fast operations
             score.dirty = false
 
         

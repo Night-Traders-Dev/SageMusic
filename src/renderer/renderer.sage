@@ -178,6 +178,29 @@ class MusicRenderer:
     proc end_frame(self, frame_info):
         base_renderer.end_frame(self.base, frame_info)
 
+    proc cleanup(self):
+        # Cleanup all GPU resources
+        if self.line_pipeline >= 0:
+            gpu.destroy_pipeline(self.line_pipeline)
+        if self.rect_pipeline >= 0:
+            gpu.destroy_pipeline(self.rect_pipeline)
+        if self.glyph_pipeline >= 0:
+            gpu.destroy_pipeline(self.glyph_pipeline)
+        if self.font_pipeline >= 0:
+            gpu.destroy_pipeline(self.font_pipeline)
+        if self.pipe_layout >= 0:
+            gpu.destroy_pipeline_layout(self.pipe_layout)
+        if self.sprite_pipe_layout >= 0:
+            gpu.destroy_pipeline_layout(self.sprite_pipe_layout)
+        if self.sprite_desc_layout >= 0:
+            gpu.destroy_descriptor_layout(self.sprite_desc_layout)
+        if self.sprite_texture >= 0:
+            gpu.destroy_texture(self.sprite_texture)
+        if self.sprite_sampler >= 0:
+            gpu.destroy_sampler(self.sprite_sampler)
+        if self.sprite_desc_pool >= 0:
+            gpu.destroy_descriptor_pool(self.sprite_desc_pool)
+
     proc recreate_swapchain(self):
         gpu.recreate_swapchain()
         self.frame_resources = []

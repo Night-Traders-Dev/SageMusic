@@ -33,6 +33,13 @@ class Note(MusicElement):
         self.dots = 0
         self.tie_to = nil
         self.articulations = []
+        
+        # Advanced features
+        self.dynamics = "mf"  # Dynamic marking: ppp, pp, p, mp, mf, f, ff, fff
+        self.velocity = 80    # MIDI velocity (0-127)
+        self.articulation = nil  # staccato, accent, tenuto, marcato, etc.
+        self.technique = nil  # pizzicato, tremolo, trill, glissando, etc.
+        self.expression = {}  # Custom expression data
 
     # SEC-IV-5: Accidental validation
     proc set_accidental(self, acc):
@@ -40,6 +47,38 @@ class Note(MusicElement):
             self.accidental = acc
         else:
             self.accidental = nil
+
+    proc set_dynamics(self, dynamic_level):
+        let valid_dynamics = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
+        if array_contains(valid_dynamics, dynamic_level):
+            self.dynamics = dynamic_level
+            # Map to MIDI velocity
+            if dynamic_level == "ppp":
+                self.velocity = 20
+            elif dynamic_level == "pp":
+                self.velocity = 35
+            elif dynamic_level == "p":
+                self.velocity = 50
+            elif dynamic_level == "mp":
+                self.velocity = 65
+            elif dynamic_level == "mf":
+                self.velocity = 80
+            elif dynamic_level == "f":
+                self.velocity = 95
+            elif dynamic_level == "ff":
+                self.velocity = 110
+            elif dynamic_level == "fff":
+                self.velocity = 127
+    
+    proc set_articulation(self, articulation_type):
+        let valid_articulations = ["staccato", "accent", "tenuto", "marcato", "staccatissimo", "fermata"]
+        if array_contains(valid_articulations, articulation_type):
+            self.articulation = articulation_type
+    
+    proc set_technique(self, technique_type):
+        let valid_techniques = ["pizzicato", "tremolo", "trill", "glissando", "harmonics", "mute"]
+        if array_contains(valid_techniques, technique_type):
+            self.technique = technique_type
 
     proc __str__(self):
         return "Note(" + self.pitch + ", " + str(self.duration) + ")"
@@ -113,11 +152,13 @@ class Score(MusicElement):
         self.composer = "Unknown"
         self.tempo = 120
         self.dirty = true # Mark as dirty initially
+        self.all_elements = [] # Flat list of all elements for fast iteration
 
     proc mark_dirty(self):
         self.dirty = true
 
-    proc clear_selection(self):
+    proc rebuild_element_cache(self):
+        self.all_elements = []
         let p_idx = 0
         while p_idx < len(self.parts):
             let part = self.parts[p_idx]
@@ -129,30 +170,24 @@ class Score(MusicElement):
                     let voice = measure.voices[v_idx]
                     let e_idx = 0
                     while e_idx < len(voice.elements):
-                        voice.elements[e_idx].selected = false
-                        voice.elements[e_idx].hovered_delete = false
+                        push(self.all_elements, voice.elements[e_idx])
                         e_idx = e_idx + 1
                     v_idx = v_idx + 1
                 m_idx = m_idx + 1
             p_idx = p_idx + 1
 
+    proc clear_selection(self):
+        let i = 0
+        while i < len(self.all_elements):
+            self.all_elements[i].selected = false
+            self.all_elements[i].hovered_delete = false
+            i = i + 1
+
     proc clear_hovered_delete(self):
-        let p_idx = 0
-        while p_idx < len(self.parts):
-            let part = self.parts[p_idx]
-            let m_idx = 0
-            while m_idx < len(part.measures):
-                let measure = part.measures[m_idx]
-                let v_idx = 0
-                while v_idx < len(measure.voices):
-                    let voice = measure.voices[v_idx]
-                    let e_idx = 0
-                    while e_idx < len(voice.elements):
-                        voice.elements[e_idx].hovered_delete = false
-                        e_idx = e_idx + 1
-                    v_idx = v_idx + 1
-                m_idx = m_idx + 1
-            p_idx = p_idx + 1
+        let i = 0
+        while i < len(self.all_elements):
+            self.all_elements[i].hovered_delete = false
+            i = i + 1
 
     proc add_part(self, part):
         part.parent = self

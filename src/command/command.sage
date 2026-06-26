@@ -54,12 +54,14 @@ class DeleteElementCommand(Command):
         if self.index >= 0:
             let new_list = []
             let i = 0
+            let inserted = false
             while i < len(self.voice.elements):
                 if i == self.index:
                     push(new_list, self.element)
+                    inserted = true
                 push(new_list, self.voice.elements[i])
                 i = i + 1
-            if len(new_list) == len(self.voice.elements):
+            if not inserted:
                 push(new_list, self.element)
             self.voice.elements = new_list
             self.voice.mark_dirty()
