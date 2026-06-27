@@ -1,37 +1,35 @@
-import strings
-
 proc get_instrument_sfz(name):
-    if strings.starts_with(name, "Flute"):
+    if contains(name, "Flute"):
         return "assets/sfz/VSCO2/Woodwinds/Flute/Flute-sus-stac.sfz"
-    elif strings.starts_with(name, "Oboe") or strings.starts_with(name, "English Horn"):
+    elif contains(name, "Oboe") or contains(name, "English Horn"):
         return "assets/sfz/VSCO2/Woodwinds/Oboe/Oboe-sus-stac.sfz"
-    elif strings.starts_with(name, "Clarinet"):
+    elif contains(name, "Clarinet"):
         return "assets/sfz/VSCO2/Woodwinds/Clarinet/Clarinet-sus-stac.sfz"
-    elif strings.starts_with(name, "Bassoon"):
+    elif contains(name, "Bassoon"):
         return "assets/sfz/VSCO2/Woodwinds/Bassoon/Bassoon-sus-stac.sfz"
-    elif strings.starts_with(name, "Trumpet"):
+    elif contains(name, "Trumpet"):
         return "assets/sfz/VSCO2/Brass/Trumpet/Trumpet-sus-stac.sfz"
-    elif strings.starts_with(name, "Horn"):
+    elif contains(name, "Horn"):
         return "assets/sfz/VSCO2/Brass/Horn/Horn-sus-stac.sfz"
-    elif strings.starts_with(name, "Trombone"):
+    elif contains(name, "Trombone"):
         return "assets/sfz/VSCO2/Brass/Trombone/Trombone-sus-stac.sfz"
-    elif strings.starts_with(name, "Tuba"):
+    elif contains(name, "Tuba"):
         return "assets/sfz/VSCO2/Brass/Tuba/Tuba-sus-stac.sfz"
-    elif strings.starts_with(name, "Violin"):
+    elif contains(name, "Violin"):
         return "assets/sfz/VSCO2/Strings/Violin/Violin-sus-stac.sfz"
-    elif strings.starts_with(name, "Viola"):
+    elif contains(name, "Viola"):
         return "assets/sfz/VSCO2/Strings/Viola/Viola-sus-stac.sfz"
-    elif strings.starts_with(name, "Cello"):
+    elif contains(name, "Cello"):
         return "assets/sfz/VSCO2/Strings/Cello/Cello-sus-stac.sfz"
-    elif strings.starts_with(name, "Double Bass") or strings.starts_with(name, "Contrabass") or strings.starts_with(name, "Bass"):
+    elif contains(name, "Double Bass") or contains(name, "Contrabass") or contains(name, "Bass"):
         return "assets/sfz/VSCO2/Strings/Double Bass/Double Bass-sus-stac.sfz"
-    elif strings.starts_with(name, "Piano"):
+    elif contains(name, "Piano"):
         return "assets/sfz/VSCO2/Keyboards/Piano/Piano.sfz"
-    elif strings.starts_with(name, "Snare"):
+    elif contains(name, "Snare"):
         return "assets/sfz/VSCO2/Percussion/Snare/Snare.sfz"
-    elif strings.starts_with(name, "Timpani"):
+    elif contains(name, "Timpani"):
         return "assets/sfz/VSCO2/Percussion/Timpani/Timpani.sfz"
-    elif strings.starts_with(name, "Alto Sax") or strings.starts_with(name, "Tenor Sax") or strings.starts_with(name, "Baritone Sax"):
+    elif contains(name, "Alto Sax") or contains(name, "Tenor Sax") or contains(name, "Baritone Sax"):
         return "assets/sfz/VSCO2/Woodwinds/Clarinet/Clarinet-sus-stac.sfz" # fallback
     else:
         return "assets/sfz/test_flute.sfz"
